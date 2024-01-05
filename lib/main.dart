@@ -1,12 +1,14 @@
 import 'dart:html' as html;
 import 'dart:ui' as ui;
 
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker_web/image_picker_web.dart';
+import 'package:meta_seo/meta_seo.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:qrgenerator/Utils/alertDialog.dart';
 import 'package:qrgenerator/Utils/constants.dart';
@@ -14,6 +16,7 @@ import 'package:qrgenerator/Utils/rounded_button.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 void main() async {
+  MetaSEO().config();
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     // Replace with actual values
@@ -26,6 +29,7 @@ void main() async {
         appId: "1:182804209799:web:384dd4de2413aa8e951822",
         measurementId: "G-WG6K1686BX"),
   );
+
   runApp(const MyApp());
 }
 
@@ -40,6 +44,27 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
+    // Define MetaSEO object
+    MetaSEO meta = MetaSEO();
+
+    // add meta seo data for web app as you want
+    meta.author(author: 'SoftwareLab By Encorange');
+    meta.description(description: 'QuickQR Generator');
+    meta.keywords(
+        keywords:
+            'Software, Custom, free, QR, code, QRcode , código , generator ,generator , free, gratis ,quick, rápido, software , rapido, codigo');
+
+    // add meta seo open graph tags as you want
+    meta.ogTitle(ogTitle: 'QuickQR');
+    meta.ogDescription(ogDescription: 'Free Quick QR code generator');
+    meta.ogImage(
+        ogImage:
+            'https://firebasestorage.googleapis.com/v0/b/softwarelab-by-encorange.appspot.com/o/Thimbnail_QuickQR.png?alt=media&token=5bcaa5ae-ed77-4f8c-82df-d72cd2a8d071');
+
+    // here you can add any tags does not exist in the package as this
+    meta.propertyContent(
+        property: 'og:encorangelab.com', content: 'SoftwareLab');
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(fontFamily: 'Futura'),
@@ -56,6 +81,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  FirebaseAnalytics analytics = FirebaseAnalytics.instance;
   GlobalKey _globalKey = GlobalKey();
   String data = '';
   bool toggleLanguage = true;
@@ -63,6 +89,12 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    analytics.logEvent(
+      name: 'QuickQR - PageLoad',
+      parameters: <String, dynamic>{
+        'Desktop Home': 'ScreenLoaded',
+      },
+    );
   }
 
   Future<void> _capturePng() async {
@@ -86,6 +118,12 @@ class _MyHomePageState extends State<MyHomePage> {
       } else {
         // Future: Implement mobile storage saving logic here if needed
       }
+      analytics.logEvent(
+        name: 'QuickQR - QR Downloaded',
+        parameters: <String, dynamic>{
+          'Downloaded QR': data,
+        },
+      );
 
       print("Image processed.");
     } catch (e) {
@@ -96,6 +134,12 @@ class _MyHomePageState extends State<MyHomePage> {
   TextEditingController textController = TextEditingController();
 
   void handleSubmit(String value) {
+    analytics.logEvent(
+      name: 'QuickQR - QR Generated',
+      parameters: <String, dynamic>{
+        'Generated QR': data,
+      },
+    );
     setState(() {
       data = value;
     });
@@ -140,7 +184,7 @@ class _MyHomePageState extends State<MyHomePage> {
     Navigator.of(context).pop(); // Close the dialog
   }
 
-  void updateBackfroundColor() {
+  void updateBackgroundColor() {
     setState(() {
       codeBackground =
           pickerColor; // Update the current color to the picked color
@@ -188,7 +232,7 @@ class _MyHomePageState extends State<MyHomePage> {
         ElevatedButton(
           child: Text(toggleLanguage ? 'Seleccionar' : 'Select'),
           onPressed:
-              updateBackfroundColor, // Call updateColor when the button is pressed
+              updateBackgroundColor, // Call updateColor when the button is pressed
         ),
       ],
     );
@@ -505,6 +549,12 @@ class _MyHomePageState extends State<MyHomePage> {
                             //button logo
                             IconButton(
                               onPressed: () {
+                                analytics.logEvent(
+                                  name: 'QuickQR - Redirected to SoftwareLab',
+                                  parameters: <String, dynamic>{
+                                    'Tagline Redirect': data,
+                                  },
+                                );
                                 final Uri link =
                                     Uri.parse('https://encorangelab.com/');
                                 launchURL(link);
@@ -1050,6 +1100,12 @@ class _MyHomePageState extends State<MyHomePage> {
                               //tagline
                               IconButton(
                                 onPressed: () {
+                                  analytics.logEvent(
+                                    name: 'QuickQR - Redirected to SoftwareLab',
+                                    parameters: <String, dynamic>{
+                                      'Tagline Redirect': data,
+                                    },
+                                  );
                                   final Uri link =
                                       Uri.parse('https://encorangelab.com/');
                                   launchURL(link);
@@ -1108,6 +1164,12 @@ class _MyHomePageState extends State<MyHomePage> {
                           ),
                           TextButton(
                               onPressed: () {
+                                analytics.logEvent(
+                                  name: 'QuickQR - contact SoftwareLab',
+                                  parameters: <String, dynamic>{
+                                    'Email Redirect': data,
+                                  },
+                                );
                                 String? encodeQueryParameters(
                                     Map<String, String> params) {
                                   return params.entries
@@ -1143,6 +1205,12 @@ class _MyHomePageState extends State<MyHomePage> {
                           ),
                           TextButton(
                               onPressed: () {
+                                analytics.logEvent(
+                                  name: 'QuickQR - Maps SoftwareLab',
+                                  parameters: <String, dynamic>{
+                                    'Maps Redirect': data,
+                                  },
+                                );
                                 final Uri link = Uri.parse(
                                     'https://goo.gl/maps/wpm2LhGHeiw9LqXB7');
                                 launchURL(link);
@@ -1174,6 +1242,12 @@ class _MyHomePageState extends State<MyHomePage> {
                                   color: Colors
                                       .white), // Replace 'assets/icon.png' with your image asset
                               onPressed: () {
+                                analytics.logEvent(
+                                  name: 'QuickQR - Youtube SoftwareLab',
+                                  parameters: <String, dynamic>{
+                                    'YouTube Redirect': data,
+                                  },
+                                );
                                 final Uri link = Uri.parse(YouTube);
                                 launchURL(link);
                               },
@@ -1181,6 +1255,12 @@ class _MyHomePageState extends State<MyHomePage> {
                             const SizedBox(width: 5),
                             IconButton(
                               onPressed: () {
+                                analytics.logEvent(
+                                  name: 'QuickQR - Instagram SoftwareLab',
+                                  parameters: <String, dynamic>{
+                                    'Instagram Redirect': data,
+                                  },
+                                );
                                 final Uri link = Uri.parse(Instagram);
                                 launchURL(link);
                               },
@@ -1202,6 +1282,12 @@ class _MyHomePageState extends State<MyHomePage> {
                             width: 100,
                           ),
                           onPressed: () {
+                            analytics.logEvent(
+                              name: 'QuickQR - Website SoftwareLab',
+                              parameters: <String, dynamic>{
+                                'Bottom container Redirect': data,
+                              },
+                            );
                             final Uri link =
                                 Uri.parse('https://encorangelab.com/');
                             launchURL(link);

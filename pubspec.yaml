@@ -44,6 +44,7 @@ dependencies:
   url_launcher: ^6.1.11
   flutter_colorpicker: ^1.0.3
   image_picker_web: ^2.1.1
+  meta_seo: ^3.0.5
 
 dev_dependencies:
   flutter_test:
