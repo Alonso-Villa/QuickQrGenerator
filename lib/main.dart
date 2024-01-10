@@ -1,9 +1,9 @@
-import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:ui' as ui;
 
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -104,7 +104,7 @@ class _LargeScreenState extends State<LargeScreen> {
   FirebaseAnalytics analytics = FirebaseAnalytics.instance;
   GlobalKey _globalKey = GlobalKey();
   String data = '';
-  bool toggleLanguage = true;
+  bool toggleLanguage = false;
 
   @override
   void initState() {
@@ -1355,7 +1355,8 @@ class _SmallScreenState extends State<SmallScreen> {
   FirebaseAnalytics analytics = FirebaseAnalytics.instance;
   GlobalKey _globalKey = GlobalKey();
   String data = '';
-  bool toggleLanguage = true;
+  bool toggleLanguage = false;
+  bool isloading = true;
 
   @override
   void initState() {
@@ -1369,61 +1370,6 @@ class _SmallScreenState extends State<SmallScreen> {
   }
 
   TextEditingController textController = TextEditingController();
-
-  Future<void> _capturePng() async {
-    try {
-      RenderRepaintBoundary boundary = _globalKey.currentContext!
-          .findRenderObject() as RenderRepaintBoundary;
-      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
-      ByteData? byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      Uint8List pngBytes = byteData!.buffer.asUint8List();
-
-      // Encode the Uint8List as a Base64 string
-      String base64Image = base64Encode(pngBytes);
-
-      // Save the Base64 encoded string to localStorage
-      saveToLocalStorage('savedImage', base64Image);
-
-      // Analytics logEvent can remain the same
-      analytics.logEvent(
-        name: 'QuickQR - QR Downloaded',
-        parameters: <String, dynamic>{
-          'Downloaded QR': data,
-        },
-      );
-
-      print("Image processed and saved to localStorage.");
-    } catch (e) {
-      print(e.toString());
-    }
-  }
-
-  void saveToLocalStorage(String key, String value) {
-    html.window.localStorage[key] = value;
-  }
-
-  String? readFromLocalStorage(String key) {
-    return html.window.localStorage[key];
-  }
-
-  void downloadSavedImage() {
-    String? base64Image = readFromLocalStorage('savedImage');
-    if (base64Image != null) {
-      // Convert the Base64 string back to bytes
-      Uint8List bytes = base64Decode(base64Image);
-
-      // Create a blob from the bytes and create an object URL for it
-      final blob = html.Blob([bytes]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute("download", "QuickQR.png")
-        ..click();
-      html.Url.revokeObjectUrl(url);
-    } else {
-      print("No image saved in localStorage.");
-    }
-  }
 
   void handleSubmit(String value) {
     analytics.logEvent(
@@ -1535,6 +1481,32 @@ class _SmallScreenState extends State<SmallScreen> {
         return alert;
       },
     );
+  }
+
+  ///Upload to firebase:
+  String imageURL = '';
+  Future<void> uploadToFirebase(Uint8List file) async {
+    setState(() {
+      isloading = true;
+    });
+    final filePath = 'QuickQR/$data.png'; //path to save Storage
+    try {
+      var snapshot =
+          await FirebaseStorage.instance.ref().child(filePath).putData(file);
+      var downloadUrl = await snapshot.ref.getDownloadURL();
+      print(downloadUrl);
+      setState(() {
+        imageURL = downloadUrl;
+      });
+    } catch (e) {
+      setState(() {
+        showAlertPopup(context, 'Error', '$e', '', 'Aceptar', () {
+          Navigator.pop(context);
+        });
+      });
+      print('error:$e');
+    }
+    ;
   }
 
   @override
@@ -1906,7 +1878,7 @@ class _SmallScreenState extends State<SmallScreen> {
                         const SizedBox(height: 30),
 
                         ///Editor end view
-                        ///QR Code
+                        //QR Code
                         Column(
                           children: [
                             RepaintBoundary(
@@ -2321,12 +2293,27 @@ class _SmallScreenState extends State<SmallScreen> {
                         const SizedBox(height: 30),
 
                         ///Download button
-                        RoundedButton(
-                            color: darkBlue,
-                            textColor: Colors.white,
-                            title: toggleLanguage ? 'Descargar' : 'Download',
-                            width: 200,
-                            pressed: downloadSavedImage),
+                        imageURL.isNotEmpty
+                            ? RoundedButton(
+                                color: darkBlue,
+                                textColor: Colors.white,
+                                title:
+                                    toggleLanguage ? 'Descargar' : 'Download',
+                                width: 200,
+                                pressed: () {
+                                  final Uri link = Uri.parse(imageURL);
+                                  launchURL(link);
+                                })
+                            : RoundedButton(
+                                color: lightBlue,
+                                textColor: Colors.white,
+                                title: toggleLanguage
+                                    ? 'Generar código QR'
+                                    : 'Generate QR Code',
+                                width: 200,
+                                pressed: () {
+                                  //Something here
+                                }),
 
                         ///Tagline:
                         Padding(
