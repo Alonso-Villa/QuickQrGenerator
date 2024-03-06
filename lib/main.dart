@@ -1483,6 +1483,37 @@ class _SmallScreenState extends State<SmallScreen> {
     );
   }
 
+  Future<void> _capturePng() async {
+    try {
+      RenderRepaintBoundary boundary = _globalKey.currentContext!
+          .findRenderObject() as RenderRepaintBoundary;
+      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      ByteData? byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      Uint8List pngBytes = byteData!.buffer.asUint8List();
+      //uploadToFirebase(pngBytes);
+
+      final blob = html.Blob([pngBytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute("download", "screenshot.png")
+        ..click();
+      html.Url.revokeObjectUrl(url);
+
+      //google Analytics
+      analytics.logEvent(
+        name: 'QuickQR - QR Downloaded',
+        parameters: <String, dynamic>{
+          'Downloaded QR': data,
+        },
+      );
+
+      print("Image processed.");
+    } catch (e) {
+      print(e.toString());
+    }
+  }
+
   ///Upload to firebase:
   String imageURL = '';
   Future<void> uploadToFirebase(Uint8List file) async {
@@ -2312,6 +2343,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                     : 'Generate QR Code',
                                 width: 200,
                                 pressed: () {
+                                  _capturePng();
                                   //Something here
                                 }),
 
@@ -2322,19 +2354,12 @@ class _SmallScreenState extends State<SmallScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              toggleLanguage
-                                  ? const Text('Web app construida por',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                          color: darkBlue,
-                                          fontWeight: FontWeight.normal,
-                                          fontSize: 10))
-                                  : const Text('Powered by',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                          color: darkBlue,
-                                          fontWeight: FontWeight.normal,
-                                          fontSize: 10)),
+                              const Text('Powered by',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: darkBlue,
+                                      fontWeight: FontWeight.normal,
+                                      fontSize: 10)),
                               //tagline
                               IconButton(
                                 onPressed: () {
