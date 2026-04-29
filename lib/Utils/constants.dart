@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 //Social Media Links>
-const String Instagram = 'https://www.instagram.com/encorange_softwarelab/';
-const String YouTube = 'https://www.youtube.com/@SoftwareLabEncorange';
-const String Website = 'encorangelab.com';
+const String Instagram = 'https://www.instagram.com/softwarelabx/';
+// const String YouTube = 'https://www.youtube.com/@SoftwareLabEncorange';
+const String Website = 'https://softwarelabx.com/';
+const contactEmail = 'hello@softwarelabx.com';
 
 const Color darkGreen = Color(0xFF189592); //purple
 const Color lightGreen = Color(0xFF26D9C4);

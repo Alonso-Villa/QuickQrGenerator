@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "quickqrgenerator",
+    "site": "free-qr",
     "public": "build/web",
     "ignore": [
       "firebase.json",

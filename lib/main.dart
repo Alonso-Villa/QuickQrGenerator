@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'dart:html' as html;
 import 'dart:ui' as ui;
+import 'dart:ui_web' as ui_web;
 
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -39,6 +40,1190 @@ const Color backgroundBlue = Color(0xFF90B7D1); //purple
 const Color darkBlue = Color(0xFF032137);
 const Color lightBlue = Color(0xFF0282C7);
 const Color flashGreen = Color(0xFF1FD1B9);
+const String seoTitle = 'Free QR';
+const String seoUrl = 'https://freeqr.softwarelabx.com/';
+const String seoDescription = 'Free QR Code Generator';
+
+enum QuickQrLayout { large, small }
+
+enum QuickQrStep { input, customize, download }
+
+String _languageCode(bool useSpanish) => useSpanish ? 'es' : 'en';
+
+String _colorToHex(Color color) =>
+    color.value.toRadixString(16).padLeft(8, '0').toUpperCase();
+
+String _classifyQrData(String value) {
+  final trimmedValue = value.trim();
+  if (trimmedValue.isEmpty) {
+    return 'empty';
+  }
+
+  final lowerValue = trimmedValue.toLowerCase();
+  final emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+  final phonePattern = RegExp(r'^\+?[0-9()\-\s]{7,}$');
+
+  if (lowerValue.startsWith('http://') || lowerValue.startsWith('https://')) {
+    return 'url';
+  }
+  if (lowerValue.startsWith('mailto:') || emailPattern.hasMatch(trimmedValue)) {
+    return 'email';
+  }
+  if (lowerValue.startsWith('tel:') || phonePattern.hasMatch(trimmedValue)) {
+    return 'phone';
+  }
+  if (lowerValue.startsWith('wifi:')) {
+    return 'wifi';
+  }
+  if (lowerValue.startsWith('sms:')) {
+    return 'sms';
+  }
+  if (lowerValue.startsWith('geo:')) {
+    return 'geo';
+  }
+  if (lowerValue.startsWith('upi:')) {
+    return 'payment';
+  }
+  if (lowerValue.startsWith('whatsapp://')) {
+    return 'whatsapp';
+  }
+
+  return 'text';
+}
+
+class StripeSupportSection extends StatelessWidget {
+  const StripeSupportSection({
+    super.key,
+    required this.useSpanish,
+    required this.compact,
+    this.onSupportPressed,
+  });
+
+  final bool useSpanish;
+  final bool compact;
+  final VoidCallback? onSupportPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxWidth = compact ? 320.0 : 460.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            useSpanish ? 'Te gusta esta herramienta?' : 'Like this tool?',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: darkBlue,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: compact ? 280 : 320),
+            child: _StripeBuyButton(
+              compact: compact,
+              onPressed: onSupportPressed,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Text(
+              useSpanish
+                  ? 'Estas herramientas son gratuitas. Si quieres ayudar a que los desarrolladores sigan creando herramientas gratis, puedes invitarnos un cafe.'
+                  : 'These tools are free. If you would like to help the developers keep making free tools, you can sponsor the coffee.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: darkBlue,
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StripeBuyButton extends StatefulWidget {
+  const _StripeBuyButton({
+    required this.compact,
+    this.onPressed,
+  });
+
+  final bool compact;
+  final VoidCallback? onPressed;
+
+  @override
+  State<_StripeBuyButton> createState() => _StripeBuyButtonState();
+}
+
+class _StripeBuyButtonState extends State<_StripeBuyButton> {
+  static const String _stripeScriptUrl =
+      'https://js.stripe.com/v3/buy-button.js';
+  static const String _buyButtonId = 'buy_btn_1StauSErS4BEreV5TBeUB31X';
+  static const String _publishableKey =
+      'pk_live_51OmJtBErS4BEreV5UhzYaKOFcnSh7rBR8JhZVHxdoMOdASgGpvv5K7DR5iJObdGIJiMS6eHWhuI1DaiaaCQTi7nB006QQHO4DH';
+
+  static int _viewTypeCounter = 0;
+  static bool _stripeScriptInjected = false;
+
+  late final String _viewType;
+  html.DivElement? _container;
+  html.Element? _stripeButton;
+  Timer? _heightProbe;
+  double _buttonHeight = 520;
+  int _stableHeightTicks = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewType = 'stripe-buy-button-view-${_viewTypeCounter++}';
+
+    if (!kIsWeb) {
+      return;
+    }
+
+    _ensureStripeScript();
+    ui_web.platformViewRegistry.registerViewFactory(
+      _viewType,
+      (int viewId) {
+        final container = html.DivElement()
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..style.display = 'flex'
+          ..style.justifyContent = 'center'
+          ..style.alignItems = 'flex-start';
+
+        container.onClick.listen((_) {
+          widget.onPressed?.call();
+        });
+
+        final stripeButton = html.document.createElement('stripe-buy-button')
+          ..setAttribute('buy-button-id', _buyButtonId)
+          ..setAttribute('publishable-key', _publishableKey);
+
+        _container = container;
+        _stripeButton = stripeButton;
+        container.children.add(stripeButton);
+        return container;
+      },
+    );
+    _startHeightProbe();
+  }
+
+  void _ensureStripeScript() {
+    if (_stripeScriptInjected) {
+      return;
+    }
+
+    final existingScript =
+        html.document.querySelector('script[src="$_stripeScriptUrl"]');
+    if (existingScript != null) {
+      _stripeScriptInjected = true;
+      return;
+    }
+
+    final script = html.ScriptElement()
+      ..async = true
+      ..src = _stripeScriptUrl;
+    html.document.head?.append(script);
+    _stripeScriptInjected = true;
+  }
+
+  void _startHeightProbe() {
+    _heightProbe?.cancel();
+    _heightProbe = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted) {
+        return;
+      }
+
+      final measuredHeight = _measureRenderedHeight();
+      if (measuredHeight == null) {
+        return;
+      }
+
+      final nextHeight = measuredHeight + 8;
+      if ((nextHeight - _buttonHeight).abs() > 1) {
+        _stableHeightTicks = 0;
+        setState(() {
+          _buttonHeight = nextHeight;
+        });
+        return;
+      }
+
+      _stableHeightTicks++;
+      if (_stableHeightTicks >= 6) {
+        _heightProbe?.cancel();
+      }
+    });
+  }
+
+  double? _measureRenderedHeight() {
+    final container = _container;
+    final stripeButton = _stripeButton;
+    if (container == null || stripeButton == null) {
+      return null;
+    }
+
+    var measuredHeight = stripeButton.getBoundingClientRect().height;
+    final containerScrollHeight = container.scrollHeight.toDouble();
+    if (containerScrollHeight > measuredHeight) {
+      measuredHeight = containerScrollHeight;
+    }
+
+    final containerRectHeight = container.getBoundingClientRect().height;
+    if (containerRectHeight > measuredHeight) {
+      measuredHeight = containerRectHeight;
+    }
+
+    if (measuredHeight < 200) {
+      return null;
+    }
+
+    return measuredHeight.toDouble();
+  }
+
+  @override
+  void dispose() {
+    _heightProbe?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!kIsWeb) {
+      return const SizedBox.shrink();
+    }
+
+    return SizedBox(
+      height: _buttonHeight,
+      child: HtmlElementView(viewType: _viewType),
+    );
+  }
+}
+
+class QuickQrAnalyticsTracker {
+  QuickQrAnalyticsTracker({
+    required this.analytics,
+    required this.layout,
+  });
+
+  final FirebaseAnalytics analytics;
+  final QuickQrLayout layout;
+
+  static final RegExp _invalidKeyChars = RegExp(r'[^a-zA-Z0-9_]');
+
+  Future<void>? _configureFuture;
+  String? _lastStep;
+
+  String get _layoutName => layout.name;
+
+  Future<void> initialize({required String language}) {
+    return _configureFuture ??= _configure(language: language);
+  }
+
+  Future<void> _configure({required String language}) async {
+    try {
+      await analytics.setAnalyticsCollectionEnabled(true);
+      await analytics.setDefaultEventParameters({
+        'app_name': 'quickqr',
+        'surface': 'qr_generator',
+        'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+        'runtime': kReleaseMode ? 'release' : 'debug',
+      });
+      await _setUserProperty(name: 'layout_type', value: _layoutName);
+      await _setUserProperty(name: 'lang_code', value: language);
+      await _setUserProperty(
+          name: 'editor_step', value: QuickQrStep.input.name);
+      await _setUserProperty(name: 'qr_ready', value: 'no');
+
+      await analytics.logScreenView(
+        screenName: 'quickqr_${_layoutName}_home',
+        screenClass: 'qr_generator',
+        parameters: _sanitizeParameters({
+          'layout': _layoutName,
+          'language': language,
+        }),
+      );
+      await _logEvent(
+        'editor_session_start',
+        params: {
+          'layout': _layoutName,
+          'language': language,
+        },
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Analytics initialization failed: $error');
+      }
+    }
+  }
+
+  Future<void> trackLifecycle({
+    required AppLifecycleState state,
+    required String language,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    await _logEditorEvent(
+      'lifecycle_change',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'lifecycle_state': state.name,
+      },
+    );
+  }
+
+  Future<void> trackStepView({
+    required QuickQrStep step,
+    required String language,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    final stepName = step.name;
+    if (_lastStep == stepName) {
+      return;
+    }
+
+    _lastStep = stepName;
+    await _setUserProperty(name: 'editor_step', value: stepName);
+    await _setUserProperty(
+      name: 'qr_ready',
+      value: snapshot['qr_ready'] == true ? 'yes' : 'no',
+    );
+
+    final qrInputType = snapshot['data_type']?.toString();
+    if (qrInputType != null && qrInputType.isNotEmpty) {
+      await _setUserProperty(name: 'qr_input_type', value: qrInputType);
+    }
+
+    await _logEditorEvent(
+      'editor_step_view',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'step': stepName,
+      },
+    );
+  }
+
+  Future<void> trackLanguageToggle({
+    required String language,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    await _setUserProperty(name: 'lang_code', value: language);
+    await _logEditorEvent(
+      'language_toggle',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+      },
+    );
+  }
+
+  Future<void> trackInputStarted({
+    required String language,
+    required String inputType,
+    required int draftLength,
+  }) async {
+    await initialize(language: language);
+    await _logEvent(
+      'input_started',
+      params: {
+        'layout': _layoutName,
+        'language': language,
+        'draft_type': inputType,
+        'draft_length': draftLength,
+      },
+    );
+  }
+
+  Future<void> trackInputCleared({
+    required String language,
+  }) async {
+    await initialize(language: language);
+    await _logEvent(
+      'input_cleared',
+      params: {
+        'layout': _layoutName,
+        'language': language,
+      },
+    );
+  }
+
+  Future<void> trackQrGenerated({
+    required String language,
+    required String inputSource,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    await _setUserProperty(
+      name: 'qr_ready',
+      value: snapshot['qr_ready'] == true ? 'yes' : 'no',
+    );
+    await _setUserProperty(
+      name: 'qr_input_type',
+      value: snapshot['data_type']?.toString(),
+    );
+    await _logEditorEvent(
+      'qr_generate',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'input_source': inputSource,
+      },
+    );
+  }
+
+  Future<void> trackCustomization({
+    required String language,
+    required String control,
+    required String action,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    await _logEditorEvent(
+      'qr_customize',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'control': control,
+        'action': action,
+      },
+    );
+  }
+
+  Future<void> trackReset({
+    required String language,
+    required String phase,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    if (phase == 'confirmed') {
+      await _setUserProperty(name: 'qr_ready', value: 'no');
+      await _setUserProperty(
+          name: 'editor_step', value: QuickQrStep.input.name);
+    }
+    await _logEditorEvent(
+      'editor_reset',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'phase': phase,
+      },
+    );
+  }
+
+  Future<void> trackDownload({
+    required String language,
+    required String status,
+    required Map<String, Object?> snapshot,
+    String? errorText,
+  }) async {
+    await initialize(language: language);
+    await _logEditorEvent(
+      'qr_download',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'status': status,
+        if (errorText != null && errorText.isNotEmpty) 'error_text': errorText,
+      },
+    );
+  }
+
+  Future<void> trackSupportAction({
+    required String language,
+    required String action,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    await _logEditorEvent(
+      'support_prompt',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'action': action,
+      },
+    );
+  }
+
+  Future<void> trackOutboundClick({
+    required String language,
+    required String destination,
+    required Uri uri,
+    required bool success,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    await _logEditorEvent(
+      'outbound_click',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'destination': destination,
+        'launch_ok': success,
+        'link_scheme': uri.scheme,
+        'link_host': uri.host.isNotEmpty ? uri.host : uri.path,
+      },
+    );
+  }
+
+  Future<void> _logEditorEvent(
+    String name, {
+    required Map<String, Object?> snapshot,
+    Map<String, Object?> extra = const {},
+  }) {
+    return _logEvent(
+      name,
+      params: {
+        'layout': _layoutName,
+        ...snapshot,
+        ...extra,
+      },
+    );
+  }
+
+  Future<void> _logEvent(
+    String name, {
+    Map<String, Object?> params = const {},
+  }) async {
+    try {
+      await analytics.logEvent(
+        name: name,
+        parameters: _sanitizeParameters(params),
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Analytics event "$name" failed: $error');
+      }
+    }
+  }
+
+  Future<void> _setUserProperty({
+    required String name,
+    required String? value,
+  }) async {
+    try {
+      await analytics.setUserProperty(
+        name: name,
+        value: value == null ? null : _truncate(value, 36),
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Analytics user property "$name" failed: $error');
+      }
+    }
+  }
+
+  Map<String, Object> _sanitizeParameters(Map<String, Object?> params) {
+    final sanitized = <String, Object>{};
+
+    params.forEach((key, value) {
+      final normalizedValue = _normalizeValue(value);
+      if (normalizedValue == null) {
+        return;
+      }
+
+      var sanitizedKey = key.replaceAll(_invalidKeyChars, '_');
+      if (sanitizedKey.isEmpty ||
+          !RegExp(r'^[A-Za-z]').hasMatch(sanitizedKey)) {
+        sanitizedKey = 'p_$sanitizedKey';
+      }
+      sanitizedKey = _truncate(sanitizedKey, 40);
+
+      sanitized[sanitizedKey] = normalizedValue;
+    });
+
+    return sanitized;
+  }
+
+  Object? _normalizeValue(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is bool) {
+      return value ? 1 : 0;
+    }
+    if (value is num) {
+      return value;
+    }
+    if (value is Enum) {
+      return _truncate(value.name, 100);
+    }
+    if (value is String) {
+      return _truncate(value, 100);
+    }
+
+    return _truncate(value.toString(), 100);
+  }
+
+  String _truncate(String value, int maxLength) {
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return value.substring(0, maxLength);
+  }
+}
+
+abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
+    with WidgetsBindingObserver {
+  final FirebaseAnalytics analytics = FirebaseAnalytics.instance;
+  final GlobalKey _globalKey = GlobalKey();
+  final TextEditingController textController = TextEditingController();
+
+  static const double _defaultOutlineWidth = 1;
+  static const double _defaultCodeTextSize = 20;
+
+  QuickQrLayout get layout;
+
+  late final QuickQrAnalyticsTracker _tracker = QuickQrAnalyticsTracker(
+    analytics: analytics,
+    layout: layout,
+  );
+
+  String data = '';
+  bool toggleLanguage = false;
+  Color currentColor = darkBlue;
+  Color codeBackground = Colors.white;
+  bool roundedCorners = false;
+  bool outline = false;
+  double outlineWidth = _defaultOutlineWidth;
+  String codeText = '';
+  double codeTextSize = _defaultCodeTextSize;
+  Uint8List? imageFile;
+  int _previewVersion = 0;
+  bool _hasLoggedInputStart = false;
+  bool _hasLoggedSupportPromptShown = false;
+
+  bool get imageAvailable => imageFile != null;
+
+  String get _language => _languageCode(toggleLanguage);
+
+  Map<String, Object?> _analyticsSnapshot() {
+    return {
+      'data_type': _classifyQrData(data),
+      'data_length': data.length,
+      'qr_ready': data.isNotEmpty,
+      'rounded_corners': roundedCorners,
+      'outline_enabled': outline,
+      'outline_width': outlineWidth.round(),
+      'has_center_image': imageAvailable,
+      'has_caption': codeText.trim().isNotEmpty,
+      'caption_length': codeText.trim().length,
+      'caption_size': codeTextSize.round(),
+      'code_color': _colorToHex(currentColor),
+      'bg_color': _colorToHex(codeBackground),
+      'preview_version': _previewVersion,
+    };
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_tracker.initialize(language: _language));
+    unawaited(
+      _tracker.trackStepView(
+        step: QuickQrStep.input,
+        language: _language,
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    textController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    unawaited(
+      _tracker.trackLifecycle(
+        state: state,
+        language: _language,
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _setState(VoidCallback updates) {
+    if (!mounted) return;
+    setState(updates);
+  }
+
+  void _updatePreview(VoidCallback updates) {
+    _setState(() {
+      updates();
+      _previewVersion++;
+    });
+  }
+
+  void _toggleLanguage() {
+    _setState(() {
+      toggleLanguage = !toggleLanguage;
+    });
+    unawaited(
+      _tracker.trackLanguageToggle(
+        language: _language,
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _showResetDialog() {
+    unawaited(
+      _tracker.trackReset(
+        language: _language,
+        phase: 'requested',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+
+    showAlertPopup(
+      context,
+      toggleLanguage ? 'Volver al paso 1' : 'Go back step 1',
+      toggleLanguage
+          ? 'Se tendrá que volver a generar un nuevo código QR'
+          : 'A new QR Code will have to be generated',
+      'OK',
+      toggleLanguage ? 'Cancelar' : 'Cancel',
+      () {
+        unawaited(
+          _tracker.trackReset(
+            language: _language,
+            phase: 'confirmed',
+            snapshot: _analyticsSnapshot(),
+          ),
+        );
+        _resetEditor();
+        Navigator.pop(context);
+      },
+    );
+  }
+
+  void _resetEditor() {
+    _setState(() {
+      textController.clear();
+      data = '';
+      currentColor = darkBlue;
+      codeBackground = Colors.white;
+      roundedCorners = false;
+      outline = false;
+      outlineWidth = _defaultOutlineWidth;
+      codeText = '';
+      codeTextSize = _defaultCodeTextSize;
+      imageFile = null;
+      _previewVersion = 0;
+      _hasLoggedInputStart = false;
+      _hasLoggedSupportPromptShown = false;
+    });
+
+    unawaited(
+      _tracker.trackStepView(
+        step: QuickQrStep.input,
+        language: _language,
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _handleDataInputChanged(String value) {
+    final hasValue = value.trim().isNotEmpty;
+    if (!_hasLoggedInputStart && hasValue) {
+      _hasLoggedInputStart = true;
+      unawaited(
+        _tracker.trackInputStarted(
+          language: _language,
+          inputType: _classifyQrData(value),
+          draftLength: value.length,
+        ),
+      );
+      return;
+    }
+
+    if (_hasLoggedInputStart && !hasValue) {
+      _hasLoggedInputStart = false;
+      unawaited(
+        _tracker.trackInputCleared(language: _language),
+      );
+    }
+  }
+
+  void handleSubmit(String value, {required String source}) {
+    _updatePreview(() {
+      data = value;
+    });
+
+    final snapshot = _analyticsSnapshot();
+    unawaited(
+      _tracker.trackQrGenerated(
+        language: _language,
+        inputSource: source,
+        snapshot: snapshot,
+      ),
+    );
+
+    if (data.isNotEmpty) {
+      unawaited(
+        _tracker.trackStepView(
+          step: QuickQrStep.customize,
+          language: _language,
+          snapshot: snapshot,
+        ),
+      );
+      unawaited(
+        _tracker.trackStepView(
+          step: QuickQrStep.download,
+          language: _language,
+          snapshot: snapshot,
+        ),
+      );
+
+      if (!_hasLoggedSupportPromptShown) {
+        _hasLoggedSupportPromptShown = true;
+        unawaited(
+          _tracker.trackSupportAction(
+            language: _language,
+            action: 'shown',
+            snapshot: snapshot,
+          ),
+        );
+      }
+    }
+  }
+
+  void _handleSupportPressed() {
+    unawaited(
+      _tracker.trackSupportAction(
+        language: _language,
+        action: 'clicked',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  Future<void> _pickQrColor() async {
+    final selectedColor = await _showColorPickerDialog(
+      context: context,
+      useSpanish: toggleLanguage,
+      initialColor: currentColor,
+    );
+    if (selectedColor == null) return;
+
+    _updatePreview(() {
+      currentColor = selectedColor;
+    });
+
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'qr_color',
+        action: 'changed',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  Future<void> _pickBackgroundColor() async {
+    final selectedColor = await _showColorPickerDialog(
+      context: context,
+      useSpanish: toggleLanguage,
+      initialColor:
+          codeBackground == Colors.transparent ? Colors.white : codeBackground,
+    );
+    if (selectedColor == null) return;
+
+    _updatePreview(() {
+      codeBackground = selectedColor;
+    });
+
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'background',
+        action: 'changed',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _clearBackground() {
+    if (codeBackground == Colors.transparent) return;
+
+    _updatePreview(() {
+      codeBackground = Colors.transparent;
+    });
+
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'background',
+        action: 'cleared',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _setRoundedCorners(bool value) {
+    if (roundedCorners == value) return;
+
+    _updatePreview(() {
+      roundedCorners = value;
+    });
+
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'rounded_corners',
+        action: value ? 'enabled' : 'disabled',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _setOutline(bool value) {
+    if (outline == value) return;
+
+    _updatePreview(() {
+      outline = value;
+    });
+
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'outline',
+        action: value ? 'enabled' : 'disabled',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _setOutlineWidth(double value) {
+    _updatePreview(() {
+      outlineWidth = value;
+    });
+  }
+
+  void _commitOutlineWidth(double value) {
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'outline_width',
+        action: 'changed',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _setCodeText(String value) {
+    final hadCaption = codeText.trim().isNotEmpty;
+
+    _updatePreview(() {
+      codeText = value;
+    });
+
+    final hasCaption = codeText.trim().isNotEmpty;
+    if (!hadCaption && hasCaption) {
+      unawaited(
+        _tracker.trackCustomization(
+          language: _language,
+          control: 'caption',
+          action: 'added',
+          snapshot: _analyticsSnapshot(),
+        ),
+      );
+    } else if (hadCaption && !hasCaption) {
+      unawaited(
+        _tracker.trackCustomization(
+          language: _language,
+          control: 'caption',
+          action: 'cleared',
+          snapshot: _analyticsSnapshot(),
+        ),
+      );
+    }
+  }
+
+  void _setCodeTextSize(double value) {
+    _updatePreview(() {
+      codeTextSize = value;
+    });
+  }
+
+  void _commitCodeTextSize(double value) {
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'caption_size',
+        action: 'changed',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  void _removeCenterImage() {
+    if (!imageAvailable) return;
+
+    _updatePreview(() {
+      imageFile = null;
+    });
+
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'center_image',
+        action: 'removed',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  Future<void> _pickCenterImage() async {
+    final image = await ImagePickerWeb.getImageAsBytes();
+    if (image == null) {
+      unawaited(
+        _tracker.trackCustomization(
+          language: _language,
+          control: 'center_image',
+          action: 'picker_cancelled',
+          snapshot: _analyticsSnapshot(),
+        ),
+      );
+      return;
+    }
+
+    _updatePreview(() {
+      imageFile = image;
+    });
+
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'center_image',
+        action: 'added',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
+  Future<void> _capturePng() async {
+    final snapshotBeforeDownload = _analyticsSnapshot();
+    unawaited(
+      _tracker.trackDownload(
+        language: _language,
+        status: 'attempt',
+        snapshot: snapshotBeforeDownload,
+      ),
+    );
+
+    try {
+      RenderRepaintBoundary boundary = _globalKey.currentContext!
+          .findRenderObject() as RenderRepaintBoundary;
+      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      ByteData? byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      Uint8List pngBytes = byteData!.buffer.asUint8List();
+
+      if (kIsWeb) {
+        final blob = html.Blob([pngBytes]);
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        html.AnchorElement(href: url)
+          ..setAttribute("download", "screenshot.png")
+          ..click();
+        html.Url.revokeObjectUrl(url);
+      }
+
+      await _tracker.trackDownload(
+        language: _language,
+        status: 'success',
+        snapshot: _analyticsSnapshot(),
+      );
+    } catch (error) {
+      await _tracker.trackDownload(
+        language: _language,
+        status: 'failure',
+        snapshot: _analyticsSnapshot(),
+        errorText: error.toString(),
+      );
+      if (kDebugMode) {
+        debugPrint('Image download failed: $error');
+      }
+    }
+  }
+
+  Future<void> _openTrackedUri({
+    required Uri uri,
+    required String destination,
+  }) async {
+    final launched = await launchUrl(uri);
+    await _tracker.trackOutboundClick(
+      language: _language,
+      destination: destination,
+      uri: uri,
+      success: launched,
+      snapshot: _analyticsSnapshot(),
+    );
+
+    if (!launched && kDebugMode) {
+      debugPrint('Could not launch $uri');
+    }
+  }
+}
+
+Future<Color?> _showColorPickerDialog({
+  required BuildContext context,
+  required bool useSpanish,
+  required Color initialColor,
+}) {
+  Color selectedColor = initialColor;
+
+  return showDialog<Color>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text(
+              useSpanish ? 'Elegir color' : 'Choose a color',
+              style:
+                  const TextStyle(color: darkBlue, fontWeight: FontWeight.bold),
+            ),
+            content: SingleChildScrollView(
+              child: MaterialPicker(
+                pickerColor: selectedColor,
+                onColorChanged: (color) {
+                  setDialogState(() {
+                    selectedColor = color;
+                  });
+                },
+              ),
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop(selectedColor);
+                },
+                child: Text(useSpanish ? 'Seleccionar' : 'Select'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
@@ -48,29 +1233,32 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // Define MetaSEO object
     MetaSEO meta = MetaSEO();
+    html.document.title = seoTitle;
 
     // add meta seo data for web app as you want
-    meta.author(author: 'SoftwareLab By Encorange');
-    meta.description(description: 'QuickQR Generator');
+    meta.author(author: 'Softwarelab X');
+    meta.description(description: seoDescription);
     meta.keywords(
         keywords:
             'Software, Custom, free, QR, code, QRcode , código , generator ,generator , free, gratis ,quick, rápido, software , rapido, codigo');
 
     // add meta seo open graph tags as you want
-    meta.ogTitle(ogTitle: 'QuickQR');
-    meta.ogDescription(ogDescription: 'Free Quick QR code generator');
+    meta.ogTitle(ogTitle: seoTitle);
+    meta.ogDescription(ogDescription: seoDescription);
     meta.ogImage(
         ogImage:
             'https://firebasestorage.googleapis.com/v0/b/softwarelab-by-encorange.appspot.com/o/Thimbnail_QuickQR.png?alt=media&token=5bcaa5ae-ed77-4f8c-82df-d72cd2a8d071');
+    meta.propertyContent(property: 'og:url', content: seoUrl);
+    meta.propertyContent(property: 'og:site_name', content: seoTitle);
+    meta.nameContent(name: 'twitter:title', content: seoTitle);
+    meta.nameContent(name: 'twitter:description', content: seoDescription);
+    meta.nameContent(name: 'twitter:url', content: seoUrl);
 
     // here you can add any tags does not exist in the package as this
-    meta.propertyContent(
-        property: 'og:encorangelab.com', content: 'SoftwareLab');
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(fontFamily: 'Futura'),
-      title: 'Generador rápido de codigos QR',
+      title: seoTitle,
       home: const MyHomePage(),
     );
   }
@@ -85,7 +1273,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
-    return ResponsiveWidget(
+    return const ResponsiveWidget(
       largeScreen: LargeScreen(),
       smallScreen: SmallScreen(),
     );
@@ -100,170 +1288,9 @@ class LargeScreen extends StatefulWidget {
   State<LargeScreen> createState() => _LargeScreenState();
 }
 
-class _LargeScreenState extends State<LargeScreen> {
-  FirebaseAnalytics analytics = FirebaseAnalytics.instance;
-  GlobalKey _globalKey = GlobalKey();
-  String data = '';
-  bool toggleLanguage = false;
-
+class _LargeScreenState extends QuickQrEditorState<LargeScreen> {
   @override
-  void initState() {
-    super.initState();
-    analytics.logEvent(
-      name: 'QuickQR - PageLoad',
-      parameters: <String, dynamic>{
-        'Desktop Home': 'ScreenLoaded',
-      },
-    );
-  }
-
-  Future<void> _capturePng() async {
-    try {
-      RenderRepaintBoundary boundary = _globalKey.currentContext!
-          .findRenderObject() as RenderRepaintBoundary;
-      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
-      ByteData? byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      Uint8List pngBytes = byteData!.buffer.asUint8List();
-
-      // Detect platform and handle saving differently
-      if (kIsWeb) {
-        // Create a blob URL and download the file in web
-        final blob = html.Blob([pngBytes]);
-        final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement(href: url)
-          ..setAttribute("download", "screenshot.png")
-          ..click();
-        html.Url.revokeObjectUrl(url);
-      } else {
-        // Future: Implement mobile storage saving logic here if needed
-      }
-      analytics.logEvent(
-        name: 'QuickQR - QR Downloaded',
-        parameters: <String, dynamic>{
-          'Downloaded QR': data,
-        },
-      );
-
-      print("Image processed.");
-    } catch (e) {
-      print(e.toString());
-    }
-  }
-
-  TextEditingController textController = TextEditingController();
-
-  void handleSubmit(String value) {
-    analytics.logEvent(
-      name: 'QuickQR - QR Generated',
-      parameters: <String, dynamic>{
-        'Generated QR': data,
-      },
-    );
-    setState(() {
-      data = value;
-    });
-  }
-
-// Declare your state variables
-  Color pickerColor = const Color(0xFF0282C7);
-  Color currentColor = darkBlue;
-  Color codeBackground = Colors.white;
-  bool roundedCorners = false;
-  bool outline = false;
-  double outlineWidth = 1;
-  String codeText = '';
-  double codeTextSize = 20;
-
-  // variable to hold image to be displayed
-  late Uint8List imageFile;
-  bool imageAvailable = false;
-
-// This method is called when a new color is picked in the picker
-  void changeColor(Color color) {
-    setState(() {
-      pickerColor = color; // Update the picker color
-      currentColor = color; // Update the current color which is used in your UI
-    });
-  }
-
-  void changeBackColor(Color color) {
-    setState(() {
-      pickerColor = color; // Update the picker color
-      codeBackground =
-          color; // Update the current color which is used in your UI
-    });
-  }
-
-// This method is triggered when the 'Select' button is pressed in the dialog
-  void updateColor() {
-    setState(() {
-      currentColor =
-          pickerColor; // Update the current color to the picked color
-    });
-    Navigator.of(context).pop(); // Close the dialog
-  }
-
-  void updateBackgroundColor() {
-    setState(() {
-      codeBackground =
-          pickerColor; // Update the current color to the picked color
-    });
-    Navigator.of(context).pop(); // Close the dialog
-  }
-
-// Method to show the color picker dialog
-  showPopup(BuildContext context) {
-    AlertDialog alert = AlertDialog(
-      title: Text(toggleLanguage ? 'Elegir color' : 'Choose a color',
-          style: const TextStyle(color: darkBlue, fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-          child: MaterialPicker(
-        pickerColor: pickerColor, // Use the pickerColor as the initial value
-        onColorChanged: changeColor, // Call changeColor when a color is picked
-      )),
-      actions: [
-        ElevatedButton(
-          child: Text(toggleLanguage ? 'Seleccionar' : 'Select'),
-          onPressed: updateColor, // Call updateColor when the button is pressed
-        ),
-      ],
-    );
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return alert;
-      },
-    );
-  }
-
-  showBackPopup(BuildContext context) {
-    AlertDialog alert = AlertDialog(
-      title: Text(toggleLanguage ? 'Elegir color' : 'Choose a color',
-          style: const TextStyle(color: darkBlue, fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-          child: MaterialPicker(
-        pickerColor: pickerColor, // Use the pickerColor as the initial value
-        onColorChanged:
-            changeBackColor, // Call changeColor when a color is picked
-      )),
-      actions: [
-        ElevatedButton(
-          child: Text(toggleLanguage ? 'Seleccionar' : 'Select'),
-          onPressed:
-              updateBackgroundColor, // Call updateColor when the button is pressed
-        ),
-      ],
-    );
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return alert;
-      },
-    );
-  }
+  QuickQrLayout get layout => QuickQrLayout.large;
 
   @override
   Widget build(BuildContext context) {
@@ -285,24 +1312,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                 tooltip: toggleLanguage
                                     ? 'Volver a emepezar'
                                     : 'Start over',
-                                onPressed: () {
-                                  showAlertPopup(
-                                      context,
-                                      toggleLanguage
-                                          ? 'Volver al paso 1'
-                                          : 'Go back step 1',
-                                      toggleLanguage
-                                          ? 'Se tendrá que volver a generar un nuevo código QR'
-                                          : 'A new QR Code will have to be generated',
-                                      'OK',
-                                      toggleLanguage ? 'Cancelar' : 'Cancel',
-                                      () {
-                                    setState(() {
-                                      data = '';
-                                      Navigator.pop(context);
-                                    });
-                                  });
-                                },
+                                onPressed: _showResetDialog,
                                 icon: const Icon(
                                   Icons.arrow_back_ios,
                                   color: darkBlue,
@@ -314,20 +1324,20 @@ class _LargeScreenState extends State<LargeScreen> {
                               width: 80,
                             ),
                             const SizedBox(width: 10),
-                            Column(
+                            const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('QuickQR',
+                                Text('QuickQR',
                                     style: TextStyle(
                                         color: darkBlue,
                                         fontSize: 30,
                                         fontWeight: FontWeight.w700)),
-                                Image.asset(
-                                  'images/Tagline.png',
-                                  width: 80,
-                                  color: lightBlue,
-                                ),
+                                Text('Generator',
+                                    style: TextStyle(
+                                        color: lightBlue,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w700)),
                               ],
                             ),
                           ],
@@ -364,13 +1374,7 @@ class _LargeScreenState extends State<LargeScreen> {
                     tooltip: toggleLanguage == true
                         ? 'Change language to English'
                         : 'Cambiar idioma a Españól',
-                    onPressed: () {
-                      setState(() {
-                        toggleLanguage == false
-                            ? toggleLanguage = true
-                            : toggleLanguage = false;
-                      });
-                    },
+                    onPressed: _toggleLanguage,
                   ),
                 ),
                 const SizedBox(width: 30),
@@ -410,13 +1414,7 @@ class _LargeScreenState extends State<LargeScreen> {
                     tooltip: toggleLanguage == true
                         ? 'Change language to English'
                         : 'Cambiar idioma a Españól',
-                    onPressed: () {
-                      setState(() {
-                        toggleLanguage == false
-                            ? toggleLanguage = true
-                            : toggleLanguage = false;
-                      });
-                    },
+                    onPressed: _toggleLanguage,
                   ),
                 ),
                 const SizedBox(width: 30),
@@ -498,10 +1496,9 @@ class _LargeScreenState extends State<LargeScreen> {
                                 textAlign: TextAlign.center,
                                 keyboardType: TextInputType.name,
                                 textCapitalization: TextCapitalization.words,
-                                onSubmitted: handleSubmit,
-                                onChanged: (value) {
-                                  print(value);
-                                },
+                                onSubmitted: (value) =>
+                                    handleSubmit(value, source: 'keyboard'),
+                                onChanged: _handleDataInputChanged,
                                 decoration: InputDecoration(
                                   fillColor: Colors.white,
                                   filled: true,
@@ -550,7 +1547,10 @@ class _LargeScreenState extends State<LargeScreen> {
                                     : 'Generate code',
                                 width: 200,
                                 pressed: () {
-                                  handleSubmit(textController.text);
+                                  handleSubmit(
+                                    textController.text,
+                                    source: 'button',
+                                  );
                                 }),
                           ],
                         ),
@@ -569,15 +1569,14 @@ class _LargeScreenState extends State<LargeScreen> {
                             //button logo
                             IconButton(
                               onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - Redirected to SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'Tagline Redirect': data,
-                                  },
-                                );
                                 final Uri link =
                                     Uri.parse('https://encorangelab.com/');
-                                launchURL(link);
+                                unawaited(
+                                  _openTrackedUri(
+                                    uri: link,
+                                    destination: 'powered_by_tagline',
+                                  ),
+                                );
                               },
                               icon: Image.asset(
                                 'images/Tagline.png',
@@ -665,8 +1664,10 @@ class _LargeScreenState extends State<LargeScreen> {
                                         child: Column(
                                           children: [
                                             PrettyQr(
+                                              key: ValueKey(
+                                                  'large-qr-$_previewVersion'),
                                               image: imageAvailable
-                                                  ? MemoryImage(imageFile)
+                                                  ? MemoryImage(imageFile!)
                                                   : null, //const AssetImage('images/Logo_iago.png'),
                                               typeNumber: null,
                                               size: 400,
@@ -735,9 +1736,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                               ? 'Color del código'
                                               : 'QR Code\'s color',
                                           width: 250,
-                                          pressed: () {
-                                            showPopup(context);
-                                          }),
+                                          pressed: _pickQrColor),
                                       Row(
                                         children: [
                                           RoundedButton(
@@ -747,9 +1746,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                                   ? 'Color del fondo'
                                                   : 'Background color',
                                               width: 200,
-                                              pressed: () {
-                                                showBackPopup(context);
-                                              }),
+                                              pressed: _pickBackgroundColor),
                                           IconButton(
                                               tooltip: toggleLanguage
                                                   ? 'Eliminar fondo'
@@ -757,12 +1754,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                               icon: const Icon(
                                                   Icons.highlight_remove,
                                                   color: Colors.red),
-                                              onPressed: () {
-                                                setState(() {
-                                                  codeBackground =
-                                                      Colors.transparent;
-                                                });
-                                              }),
+                                              onPressed: _clearBackground),
                                         ],
                                       ),
 
@@ -783,13 +1775,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                             activeColor: currentColor,
                                             inactiveTrackColor: Colors.grey,
                                             value: roundedCorners,
-                                            onChanged: (value) {
-                                              setState(() {
-                                                roundedCorners = value;
-                                                data = data + ' ';
-                                                // Update the boolean variable
-                                              });
-                                            },
+                                            onChanged: _setRoundedCorners,
                                           ),
                                         ],
                                       ),
@@ -811,13 +1797,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                             activeColor: currentColor,
                                             inactiveTrackColor: Colors.grey,
                                             value: outline,
-                                            onChanged: (value) {
-                                              setState(() {
-                                                outline = value;
-                                                data = data + ' ';
-                                                // Update the boolean variable
-                                              });
-                                            },
+                                            onChanged: _setOutline,
                                           ),
                                         ],
                                       ),
@@ -835,12 +1815,8 @@ class _LargeScreenState extends State<LargeScreen> {
                                         value: outlineWidth,
                                         min: 1.0,
                                         max: 20.0,
-                                        onChanged: (value) {
-                                          setState(() {
-                                            outlineWidth =
-                                                value; // Update the border width
-                                          });
-                                        },
+                                        onChanged: _setOutlineWidth,
+                                        onChangeEnd: _commitOutlineWidth,
                                       ),
 
                                       const Divider(),
@@ -877,7 +1853,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                                         ],
                                                       ),
                                                       child: Image.memory(
-                                                          imageFile,
+                                                          imageFile!,
                                                           height: 250,
                                                           width: 250,
                                                           fit: BoxFit.cover),
@@ -887,12 +1863,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                                     top: -0,
                                                     right: -0,
                                                     child: GestureDetector(
-                                                      onTap: () {
-                                                        setState(() {
-                                                          imageAvailable =
-                                                              false;
-                                                        });
-                                                      },
+                                                      onTap: _removeCenterImage,
                                                       child: Container(
                                                         padding:
                                                             const EdgeInsets
@@ -956,14 +1927,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                                   ],
                                                 ),
                                               ),
-                                        onTap: () async {
-                                          final image = await ImagePickerWeb
-                                              .getImageAsBytes();
-                                          setState(() {
-                                            imageFile = image!;
-                                            imageAvailable = true;
-                                          });
-                                        },
+                                        onTap: _pickCenterImage,
                                       ),
                                       const Divider(),
 
@@ -978,11 +1942,7 @@ class _LargeScreenState extends State<LargeScreen> {
                                           keyboardType: TextInputType.name,
                                           textCapitalization:
                                               TextCapitalization.words,
-                                          onChanged: (value) {
-                                            setState(() {
-                                              codeText = value;
-                                            });
-                                          },
+                                          onChanged: _setCodeText,
                                           decoration: InputDecoration(
                                             fillColor: Colors.white,
                                             filled: true,
@@ -1042,12 +2002,8 @@ class _LargeScreenState extends State<LargeScreen> {
                                         value: codeTextSize,
                                         min: 10.0,
                                         max: 50.0,
-                                        onChanged: (value) {
-                                          setState(() {
-                                            codeTextSize =
-                                                value; // Update the border width
-                                          });
-                                        },
+                                        onChanged: _setCodeTextSize,
+                                        onChangeEnd: _commitCodeTextSize,
                                       ),
                                     ],
                                   ),
@@ -1096,6 +2052,13 @@ class _LargeScreenState extends State<LargeScreen> {
                             title: toggleLanguage ? 'Descargar' : 'Download',
                             width: 200,
                             pressed: _capturePng),
+                        Container(
+                          child: StripeSupportSection(
+                            useSpanish: toggleLanguage,
+                            compact: false,
+                            onSupportPressed: _handleSupportPressed,
+                          ),
+                        ),
 
                         ///Tagline:
                         Padding(
@@ -1105,7 +2068,7 @@ class _LargeScreenState extends State<LargeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               toggleLanguage
-                                  ? const Text('Web app construida por',
+                                  ? const Text('Web app desarrollada por',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                           color: darkBlue,
@@ -1120,15 +2083,14 @@ class _LargeScreenState extends State<LargeScreen> {
                               //tagline
                               IconButton(
                                 onPressed: () {
-                                  analytics.logEvent(
-                                    name: 'QuickQR - Redirected to SoftwareLab',
-                                    parameters: <String, dynamic>{
-                                      'Tagline Redirect': data,
-                                    },
-                                  );
                                   final Uri link =
                                       Uri.parse('https://encorangelab.com/');
-                                  launchURL(link);
+                                  unawaited(
+                                    _openTrackedUri(
+                                      uri: link,
+                                      destination: 'powered_by_footer',
+                                    ),
+                                  );
                                 },
                                 icon: Image.asset(
                                   'images/Tagline.png',
@@ -1184,12 +2146,6 @@ class _LargeScreenState extends State<LargeScreen> {
                           ),
                           TextButton(
                               onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - contact SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'Email Redirect': data,
-                                  },
-                                );
                                 String? encodeQueryParameters(
                                     Map<String, String> params) {
                                   return params.entries
@@ -1200,17 +2156,22 @@ class _LargeScreenState extends State<LargeScreen> {
 
                                 final Uri emailLaunchUri = Uri(
                                   scheme: 'mailto',
-                                  path: 'hello@Encorangelab.com',
+                                  path: contactEmail,
                                   query: encodeQueryParameters(<String, String>{
                                     'subject': 'Hello SoftwareLab!',
                                     'body':
                                         'I\'d Just checked out the QR generator...',
                                   }),
                                 );
-                                launchUrl(emailLaunchUri);
+                                unawaited(
+                                  _openTrackedUri(
+                                    uri: emailLaunchUri,
+                                    destination: 'contact_email',
+                                  ),
+                                );
                               },
                               child: const Text(
-                                'Hello@EncorangeLab.com',
+                                contactEmail,
                                 style: TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.normal),
@@ -1225,15 +2186,14 @@ class _LargeScreenState extends State<LargeScreen> {
                           ),
                           TextButton(
                               onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - Maps SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'Maps Redirect': data,
-                                  },
-                                );
                                 final Uri link = Uri.parse(
                                     'https://goo.gl/maps/wpm2LhGHeiw9LqXB7');
-                                launchURL(link);
+                                unawaited(
+                                  _openTrackedUri(
+                                    uri: link,
+                                    destination: 'location_map',
+                                  ),
+                                );
                               },
                               child: const Text(
                                 '900 Biscayne Blvd, Miami, FL 33132',
@@ -1256,33 +2216,32 @@ class _LargeScreenState extends State<LargeScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            // IconButton(
+                            //   icon: Image.asset('images/youtube.png',
+                            //       height: 25,
+                            //       color: Colors
+                            //           .white), // Replace 'assets/icon.png' with your image asset
+                            //   onPressed: () {
+                            //     analytics.logEvent(
+                            //       name: 'QuickQR - Youtube SoftwareLab',
+                            //       parameters: <String, dynamic>{
+                            //         'YouTube Redirect': data,
+                            //       },
+                            //     );
+                            //     final Uri link = Uri.parse(YouTube);
+                            //     launchURL(link);
+                            //   },
+                            // ),
+                            // const SizedBox(width: 5),
                             IconButton(
-                              icon: Image.asset('images/youtube.png',
-                                  height: 25,
-                                  color: Colors
-                                      .white), // Replace 'assets/icon.png' with your image asset
                               onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - Youtube SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'YouTube Redirect': data,
-                                  },
-                                );
-                                final Uri link = Uri.parse(YouTube);
-                                launchURL(link);
-                              },
-                            ),
-                            const SizedBox(width: 5),
-                            IconButton(
-                              onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - Instagram SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'Instagram Redirect': data,
-                                  },
-                                );
                                 final Uri link = Uri.parse(Instagram);
-                                launchURL(link);
+                                unawaited(
+                                  _openTrackedUri(
+                                    uri: link,
+                                    destination: 'instagram',
+                                  ),
+                                );
                               },
                               icon: Image.asset('images/instagram.png',
                                   height: 25, color: Colors.white),
@@ -1302,15 +2261,14 @@ class _LargeScreenState extends State<LargeScreen> {
                             width: 100,
                           ),
                           onPressed: () {
-                            analytics.logEvent(
-                              name: 'QuickQR - Website SoftwareLab',
-                              parameters: <String, dynamic>{
-                                'Bottom container Redirect': data,
-                              },
-                            );
                             final Uri link =
-                                Uri.parse('https://encorangelab.com/');
-                            launchURL(link);
+                                Uri.parse('https://softwarelabx.com/');
+                            unawaited(
+                              _openTrackedUri(
+                                uri: link,
+                                destination: 'company_website',
+                              ),
+                            );
                           },
                         ),
                         toggleLanguage
@@ -1351,194 +2309,9 @@ class SmallScreen extends StatefulWidget {
   State<SmallScreen> createState() => _SmallScreenState();
 }
 
-class _SmallScreenState extends State<SmallScreen> {
-  FirebaseAnalytics analytics = FirebaseAnalytics.instance;
-  GlobalKey _globalKey = GlobalKey();
-  String data = '';
-  bool toggleLanguage = false;
-  bool isloading = true;
-
+class _SmallScreenState extends QuickQrEditorState<SmallScreen> {
   @override
-  void initState() {
-    super.initState();
-    analytics.logEvent(
-      name: 'QuickQR - PageLoad',
-      parameters: <String, dynamic>{
-        'Mobile Home': 'ScreenLoaded',
-      },
-    );
-  }
-
-  TextEditingController textController = TextEditingController();
-
-  void handleSubmit(String value) {
-    analytics.logEvent(
-      name: 'QuickQR mobile - QR Generated',
-      parameters: <String, dynamic>{
-        'Generated QR': data,
-      },
-    );
-    setState(() {
-      data = value;
-    });
-  }
-
-// Declare your state variables
-  Color pickerColor = const Color(0xFF0282C7);
-  Color currentColor = darkBlue;
-  Color codeBackground = Colors.white;
-  bool roundedCorners = false;
-  bool outline = false;
-  double outlineWidth = 1;
-  String codeText = '';
-  double codeTextSize = 20;
-
-  // variable to hold image to be displayed
-  late Uint8List imageFile;
-  bool imageAvailable = false;
-
-// This method is called when a new color is picked in the picker
-  void changeColor(Color color) {
-    setState(() {
-      pickerColor = color; // Update the picker color
-      currentColor = color; // Update the current color which is used in your UI
-    });
-  }
-
-  void changeBackColor(Color color) {
-    setState(() {
-      pickerColor = color; // Update the picker color
-      codeBackground =
-          color; // Update the current color which is used in your UI
-    });
-  }
-
-// This method is triggered when the 'Select' button is pressed in the dialog
-  void updateColor() {
-    setState(() {
-      currentColor =
-          pickerColor; // Update the current color to the picked color
-    });
-    Navigator.of(context).pop(); // Close the dialog
-  }
-
-  void updateBackgroundColor() {
-    setState(() {
-      codeBackground =
-          pickerColor; // Update the current color to the picked color
-    });
-    Navigator.of(context).pop(); // Close the dialog
-  }
-
-// Method to show the color picker dialog
-  showPopup(BuildContext context) {
-    AlertDialog alert = AlertDialog(
-      title: Text(toggleLanguage ? 'Elegir color' : 'Choose a color',
-          style: const TextStyle(color: darkBlue, fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-          child: MaterialPicker(
-        pickerColor: pickerColor, // Use the pickerColor as the initial value
-        onColorChanged: changeColor, // Call changeColor when a color is picked
-      )),
-      actions: [
-        ElevatedButton(
-          child: Text(toggleLanguage ? 'Seleccionar' : 'Select'),
-          onPressed: updateColor, // Call updateColor when the button is pressed
-        ),
-      ],
-    );
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return alert;
-      },
-    );
-  }
-
-  showBackPopup(BuildContext context) {
-    AlertDialog alert = AlertDialog(
-      title: Text(toggleLanguage ? 'Elegir color' : 'Choose a color',
-          style: const TextStyle(color: darkBlue, fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-          child: MaterialPicker(
-        pickerColor: pickerColor, // Use the pickerColor as the initial value
-        onColorChanged:
-            changeBackColor, // Call changeColor when a color is picked
-      )),
-      actions: [
-        ElevatedButton(
-          child: Text(toggleLanguage ? 'Seleccionar' : 'Select'),
-          onPressed:
-              updateBackgroundColor, // Call updateColor when the button is pressed
-        ),
-      ],
-    );
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return alert;
-      },
-    );
-  }
-
-  Future<void> _capturePng() async {
-    try {
-      RenderRepaintBoundary boundary = _globalKey.currentContext!
-          .findRenderObject() as RenderRepaintBoundary;
-      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
-      ByteData? byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      Uint8List pngBytes = byteData!.buffer.asUint8List();
-      //uploadToFirebase(pngBytes);
-
-      final blob = html.Blob([pngBytes]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute("download", "screenshot.png")
-        ..click();
-      html.Url.revokeObjectUrl(url);
-
-      //google Analytics
-      analytics.logEvent(
-        name: 'QuickQR - QR Downloaded',
-        parameters: <String, dynamic>{
-          'Downloaded QR': data,
-        },
-      );
-
-      print("Image processed.");
-    } catch (e) {
-      print(e.toString());
-    }
-  }
-
-  ///Upload to firebase:
-  String imageURL = '';
-  Future<void> uploadToFirebase(Uint8List file) async {
-    setState(() {
-      isloading = true;
-    });
-    final filePath = 'QuickQR/$data.png'; //path to save Storage
-    try {
-      var snapshot =
-          await FirebaseStorage.instance.ref().child(filePath).putData(file);
-      var downloadUrl = await snapshot.ref.getDownloadURL();
-      print(downloadUrl);
-      setState(() {
-        imageURL = downloadUrl;
-      });
-    } catch (e) {
-      setState(() {
-        showAlertPopup(context, 'Error', '$e', '', 'Aceptar', () {
-          Navigator.pop(context);
-        });
-      });
-      print('error:$e');
-    }
-    ;
-  }
+  QuickQrLayout get layout => QuickQrLayout.small;
 
   @override
   Widget build(BuildContext context) {
@@ -1560,24 +2333,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                 tooltip: toggleLanguage
                                     ? 'Volver a emepezar'
                                     : 'Start over',
-                                onPressed: () {
-                                  showAlertPopup(
-                                      context,
-                                      toggleLanguage
-                                          ? 'Volver al paso 1'
-                                          : 'Go back step 1',
-                                      toggleLanguage
-                                          ? 'Se tendrá que volver a generar un nuevo código QR'
-                                          : 'A new QR Code will have to be generated',
-                                      'OK',
-                                      toggleLanguage ? 'Cancelar' : 'Cancel',
-                                      () {
-                                    setState(() {
-                                      data = '';
-                                      Navigator.pop(context);
-                                    });
-                                  });
-                                },
+                                onPressed: _showResetDialog,
                                 icon: const Icon(
                                   Icons.arrow_back_ios,
                                   color: darkBlue,
@@ -1589,20 +2345,20 @@ class _SmallScreenState extends State<SmallScreen> {
                               width: 50,
                             ),
                             const SizedBox(width: 10),
-                            Column(
+                            const Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('QuickQR',
+                                Text('QuickQR',
                                     style: TextStyle(
                                         color: darkBlue,
                                         fontSize: 20,
                                         fontWeight: FontWeight.w700)),
-                                Image.asset(
-                                  'images/Tagline.png',
-                                  width: 50,
-                                  color: lightBlue,
-                                ),
+                                Text('Generator',
+                                    style: TextStyle(
+                                        color: lightBlue,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700)),
                               ],
                             ),
                           ],
@@ -1639,13 +2395,7 @@ class _SmallScreenState extends State<SmallScreen> {
                     tooltip: toggleLanguage == true
                         ? 'Change language to English'
                         : 'Cambiar idioma a Españól',
-                    onPressed: () {
-                      setState(() {
-                        toggleLanguage == false
-                            ? toggleLanguage = true
-                            : toggleLanguage = false;
-                      });
-                    },
+                    onPressed: _toggleLanguage,
                   ),
                 ),
                 const SizedBox(width: 30),
@@ -1685,13 +2435,7 @@ class _SmallScreenState extends State<SmallScreen> {
                     tooltip: toggleLanguage == true
                         ? 'Change language to English'
                         : 'Cambiar idioma a Españól',
-                    onPressed: () {
-                      setState(() {
-                        toggleLanguage == false
-                            ? toggleLanguage = true
-                            : toggleLanguage = false;
-                      });
-                    },
+                    onPressed: _toggleLanguage,
                   ),
                 ),
                 const SizedBox(width: 30),
@@ -1774,10 +2518,9 @@ class _SmallScreenState extends State<SmallScreen> {
                                 textAlign: TextAlign.center,
                                 keyboardType: TextInputType.name,
                                 textCapitalization: TextCapitalization.words,
-                                onSubmitted: handleSubmit,
-                                onChanged: (value) {
-                                  print(value);
-                                },
+                                onSubmitted: (value) =>
+                                    handleSubmit(value, source: 'keyboard'),
+                                onChanged: _handleDataInputChanged,
                                 decoration: InputDecoration(
                                   fillColor: Colors.white,
                                   filled: true,
@@ -1826,7 +2569,10 @@ class _SmallScreenState extends State<SmallScreen> {
                                     : 'Generate code',
                                 width: 200,
                                 pressed: () {
-                                  handleSubmit(textController.text);
+                                  handleSubmit(
+                                    textController.text,
+                                    source: 'button',
+                                  );
                                 }),
                           ],
                         ),
@@ -1845,15 +2591,14 @@ class _SmallScreenState extends State<SmallScreen> {
                             //button logo
                             IconButton(
                               onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - Redirected to SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'Tagline Redirect': data,
-                                  },
-                                );
                                 final Uri link =
                                     Uri.parse('https://encorangelab.com/');
-                                launchURL(link);
+                                unawaited(
+                                  _openTrackedUri(
+                                    uri: link,
+                                    destination: 'powered_by_tagline',
+                                  ),
+                                );
                               },
                               icon: Image.asset(
                                 'images/Tagline.png',
@@ -1933,8 +2678,10 @@ class _SmallScreenState extends State<SmallScreen> {
                                   child: Column(
                                     children: [
                                       PrettyQr(
+                                        key: ValueKey(
+                                            'small-qr-$_previewVersion'),
                                         image: imageAvailable
-                                            ? MemoryImage(imageFile)
+                                            ? MemoryImage(imageFile!)
                                             : null, //const AssetImage('images/Logo_iago.png'),
                                         typeNumber: null,
                                         size: 300,
@@ -1995,9 +2742,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                         ? 'Color del código'
                                         : 'QR Code\'s color',
                                     width: 250,
-                                    pressed: () {
-                                      showPopup(context);
-                                    }),
+                                    pressed: _pickQrColor),
                                 Row(
                                   children: [
                                     RoundedButton(
@@ -2007,20 +2752,14 @@ class _SmallScreenState extends State<SmallScreen> {
                                             ? 'Color del fondo'
                                             : 'Background color',
                                         width: 200,
-                                        pressed: () {
-                                          showBackPopup(context);
-                                        }),
+                                        pressed: _pickBackgroundColor),
                                     IconButton(
                                         tooltip: toggleLanguage
                                             ? 'Eliminar fondo'
                                             : 'Delete background',
                                         icon: const Icon(Icons.highlight_remove,
                                             color: Colors.red),
-                                        onPressed: () {
-                                          setState(() {
-                                            codeBackground = Colors.transparent;
-                                          });
-                                        }),
+                                        onPressed: _clearBackground),
                                   ],
                                 ),
 
@@ -2040,13 +2779,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                       activeColor: currentColor,
                                       inactiveTrackColor: Colors.grey,
                                       value: roundedCorners,
-                                      onChanged: (value) {
-                                        setState(() {
-                                          roundedCorners = value;
-                                          data = data + ' ';
-                                          // Update the boolean variable
-                                        });
-                                      },
+                                      onChanged: _setRoundedCorners,
                                     ),
                                   ],
                                 ),
@@ -2065,13 +2798,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                       activeColor: currentColor,
                                       inactiveTrackColor: Colors.grey,
                                       value: outline,
-                                      onChanged: (value) {
-                                        setState(() {
-                                          outline = value;
-                                          data = data + ' ';
-                                          // Update the boolean variable
-                                        });
-                                      },
+                                      onChanged: _setOutline,
                                     ),
                                   ],
                                 ),
@@ -2089,12 +2816,8 @@ class _SmallScreenState extends State<SmallScreen> {
                                   value: outlineWidth,
                                   min: 1.0,
                                   max: 20.0,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      outlineWidth =
-                                          value; // Update the border width
-                                    });
-                                  },
+                                  onChanged: _setOutlineWidth,
+                                  onChangeEnd: _commitOutlineWidth,
                                 ),
 
                                 const Divider(),
@@ -2125,7 +2848,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                                         spreadRadius: 0.5),
                                                   ],
                                                 ),
-                                                child: Image.memory(imageFile,
+                                                child: Image.memory(imageFile!,
                                                     height: 250,
                                                     width: 250,
                                                     fit: BoxFit.cover),
@@ -2135,11 +2858,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                               top: -0,
                                               right: -0,
                                               child: GestureDetector(
-                                                onTap: () {
-                                                  setState(() {
-                                                    imageAvailable = false;
-                                                  });
-                                                },
+                                                onTap: _removeCenterImage,
                                                 child: Container(
                                                   padding:
                                                       const EdgeInsets.all(5),
@@ -2195,14 +2914,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                             ],
                                           ),
                                         ),
-                                  onTap: () async {
-                                    final image =
-                                        await ImagePickerWeb.getImageAsBytes();
-                                    setState(() {
-                                      imageFile = image!;
-                                      imageAvailable = true;
-                                    });
-                                  },
+                                  onTap: _pickCenterImage,
                                 ),
                                 const Divider(),
 
@@ -2217,11 +2929,7 @@ class _SmallScreenState extends State<SmallScreen> {
                                     keyboardType: TextInputType.name,
                                     textCapitalization:
                                         TextCapitalization.words,
-                                    onChanged: (value) {
-                                      setState(() {
-                                        codeText = value;
-                                      });
-                                    },
+                                    onChanged: _setCodeText,
                                     decoration: InputDecoration(
                                       fillColor: Colors.white,
                                       filled: true,
@@ -2278,12 +2986,8 @@ class _SmallScreenState extends State<SmallScreen> {
                                   value: codeTextSize,
                                   min: 10.0,
                                   max: 50.0,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      codeTextSize =
-                                          value; // Update the border width
-                                    });
-                                  },
+                                  onChanged: _setCodeTextSize,
+                                  onChangeEnd: _commitCodeTextSize,
                                 ),
                               ],
                             ),
@@ -2324,28 +3028,17 @@ class _SmallScreenState extends State<SmallScreen> {
                         const SizedBox(height: 30),
 
                         ///Download button
-                        imageURL.isNotEmpty
-                            ? RoundedButton(
-                                color: darkBlue,
-                                textColor: Colors.white,
-                                title:
-                                    toggleLanguage ? 'Descargar' : 'Download',
-                                width: 200,
-                                pressed: () {
-                                  final Uri link = Uri.parse(imageURL);
-                                  launchURL(link);
-                                })
-                            : RoundedButton(
-                                color: lightBlue,
-                                textColor: Colors.white,
-                                title: toggleLanguage
-                                    ? 'Generar código QR'
-                                    : 'Generate QR Code',
-                                width: 200,
-                                pressed: () {
-                                  _capturePng();
-                                  //Something here
-                                }),
+                        RoundedButton(
+                            color: darkBlue,
+                            textColor: Colors.white,
+                            title: toggleLanguage ? 'Descargar' : 'Download',
+                            width: 200,
+                            pressed: _capturePng),
+                        StripeSupportSection(
+                          useSpanish: toggleLanguage,
+                          compact: true,
+                          onSupportPressed: _handleSupportPressed,
+                        ),
 
                         ///Tagline:
                         Padding(
@@ -2363,15 +3056,14 @@ class _SmallScreenState extends State<SmallScreen> {
                               //tagline
                               IconButton(
                                 onPressed: () {
-                                  analytics.logEvent(
-                                    name: 'QuickQR - Redirected to SoftwareLab',
-                                    parameters: <String, dynamic>{
-                                      'Tagline Redirect': data,
-                                    },
-                                  );
                                   final Uri link =
                                       Uri.parse('https://encorangelab.com/');
-                                  launchURL(link);
+                                  unawaited(
+                                    _openTrackedUri(
+                                      uri: link,
+                                      destination: 'powered_by_footer',
+                                    ),
+                                  );
                                 },
                                 icon: Image.asset(
                                   'images/Tagline.png',
@@ -2418,12 +3110,6 @@ class _SmallScreenState extends State<SmallScreen> {
                               ),
                               TextButton(
                                   onPressed: () {
-                                    analytics.logEvent(
-                                      name: 'QuickQR - contact SoftwareLab',
-                                      parameters: <String, dynamic>{
-                                        'Email Redirect': data,
-                                      },
-                                    );
                                     String? encodeQueryParameters(
                                         Map<String, String> params) {
                                       return params.entries
@@ -2434,18 +3120,23 @@ class _SmallScreenState extends State<SmallScreen> {
 
                                     final Uri emailLaunchUri = Uri(
                                       scheme: 'mailto',
-                                      path: 'hello@Encorangelab.com',
+                                      path: contactEmail,
                                       query: encodeQueryParameters(<String,
                                           String>{
-                                        'subject': 'Hello SoftwareLab!',
+                                        'subject': 'Hello SoftwareLab X!',
                                         'body':
                                             'I\'d Just checked out the QR generator...',
                                       }),
                                     );
-                                    launchUrl(emailLaunchUri);
+                                    unawaited(
+                                      _openTrackedUri(
+                                        uri: emailLaunchUri,
+                                        destination: 'contact_email',
+                                      ),
+                                    );
                                   },
                                   child: const Text(
-                                    'Hello@EncorangeLab.com',
+                                    contactEmail,
                                     style: TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.normal),
@@ -2463,15 +3154,14 @@ class _SmallScreenState extends State<SmallScreen> {
                               ),
                               TextButton(
                                   onPressed: () {
-                                    analytics.logEvent(
-                                      name: 'QuickQR - Maps SoftwareLab',
-                                      parameters: <String, dynamic>{
-                                        'Maps Redirect': data,
-                                      },
-                                    );
                                     final Uri link = Uri.parse(
                                         'https://goo.gl/maps/wpm2LhGHeiw9LqXB7');
-                                    launchURL(link);
+                                    unawaited(
+                                      _openTrackedUri(
+                                        uri: link,
+                                        destination: 'location_map',
+                                      ),
+                                    );
                                   },
                                   child: const Text(
                                     '900 Biscayne Blvd, Miami, FL 33132',
@@ -2494,33 +3184,32 @@ class _SmallScreenState extends State<SmallScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            // IconButton(
+                            //   icon: Image.asset('images/youtube.png',
+                            //       height: 25,
+                            //       color: Colors
+                            //           .white), // Replace 'assets/icon.png' with your image asset
+                            //   onPressed: () {
+                            //     analytics.logEvent(
+                            //       name: 'QuickQR - Youtube SoftwareLab',
+                            //       parameters: <String, dynamic>{
+                            //         'YouTube Redirect': data,
+                            //       },
+                            //     );
+                            //     final Uri link = Uri.parse(YouTube);
+                            //     launchURL(link);
+                            //   },
+                            // ),
+                            // const SizedBox(width: 5),
                             IconButton(
-                              icon: Image.asset('images/youtube.png',
-                                  height: 25,
-                                  color: Colors
-                                      .white), // Replace 'assets/icon.png' with your image asset
                               onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - Youtube SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'YouTube Redirect': data,
-                                  },
-                                );
-                                final Uri link = Uri.parse(YouTube);
-                                launchURL(link);
-                              },
-                            ),
-                            const SizedBox(width: 5),
-                            IconButton(
-                              onPressed: () {
-                                analytics.logEvent(
-                                  name: 'QuickQR - Instagram SoftwareLab',
-                                  parameters: <String, dynamic>{
-                                    'Instagram Redirect': data,
-                                  },
-                                );
                                 final Uri link = Uri.parse(Instagram);
-                                launchURL(link);
+                                unawaited(
+                                  _openTrackedUri(
+                                    uri: link,
+                                    destination: 'instagram',
+                                  ),
+                                );
                               },
                               icon: Image.asset('images/instagram.png',
                                   height: 25, color: Colors.white),
@@ -2534,15 +3223,14 @@ class _SmallScreenState extends State<SmallScreen> {
                             width: 100,
                           ),
                           onPressed: () {
-                            analytics.logEvent(
-                              name: 'QuickQR - Website SoftwareLab',
-                              parameters: <String, dynamic>{
-                                'Bottom container Redirect': data,
-                              },
-                            );
                             final Uri link =
                                 Uri.parse('https://encorangelab.com/');
-                            launchURL(link);
+                            unawaited(
+                              _openTrackedUri(
+                                uri: link,
+                                destination: 'company_website',
+                              ),
+                            );
                           },
                         ),
                         toggleLanguage
