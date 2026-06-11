@@ -43,6 +43,11 @@ const Color flashGreen = Color(0xFF1FD1B9);
 const String seoTitle = 'Free QR';
 const String seoUrl = 'https://freeqr.softwarelabx.com/';
 const String seoDescription = 'Free QR Code Generator';
+const String analyticsPlatformId = 'free_qr';
+const String analyticsPlatformName = 'Free QR';
+const String analyticsToolId = 'free_qr_generator';
+const String analyticsToolName = 'Free QR Generator';
+const String analyticsSchemaVersion = 'free_qr_v1';
 
 enum QuickQrLayout { large, small }
 
@@ -52,6 +57,37 @@ String _languageCode(bool useSpanish) => useSpanish ? 'es' : 'en';
 
 String _colorToHex(Color color) =>
     color.value.toRadixString(16).padLeft(8, '0').toUpperCase();
+
+String _devicePlatform() => kIsWeb ? 'web' : defaultTargetPlatform.name;
+
+String _viewportBucket() {
+  if (!kIsWeb) {
+    return 'native';
+  }
+
+  final width = html.window.innerWidth ?? 0;
+  if (width < 600) {
+    return 'mobile';
+  }
+  if (width < 1024) {
+    return 'tablet';
+  }
+  if (width < 1440) {
+    return 'desktop';
+  }
+  return 'wide_desktop';
+}
+
+String _viewportOrientation() {
+  if (!kIsWeb) {
+    return 'native';
+  }
+
+  final width = html.window.innerWidth ?? 0;
+  final height = html.window.innerHeight ?? 0;
+
+  return width >= height ? 'landscape' : 'portrait';
+}
 
 String _classifyQrData(String value) {
   final trimmedValue = value.trim();
@@ -97,11 +133,13 @@ class StripeSupportSection extends StatelessWidget {
     required this.useSpanish,
     required this.compact,
     this.onSupportPressed,
+    this.onSupportReady,
   });
 
   final bool useSpanish;
   final bool compact;
   final VoidCallback? onSupportPressed;
+  final VoidCallback? onSupportReady;
 
   @override
   Widget build(BuildContext context) {
@@ -127,6 +165,7 @@ class StripeSupportSection extends StatelessWidget {
             child: _StripeBuyButton(
               compact: compact,
               onPressed: onSupportPressed,
+              onReady: onSupportReady,
             ),
           ),
           const SizedBox(height: 8),
@@ -154,10 +193,12 @@ class _StripeBuyButton extends StatefulWidget {
   const _StripeBuyButton({
     required this.compact,
     this.onPressed,
+    this.onReady,
   });
 
   final bool compact;
   final VoidCallback? onPressed;
+  final VoidCallback? onReady;
 
   @override
   State<_StripeBuyButton> createState() => _StripeBuyButtonState();
@@ -169,6 +210,10 @@ class _StripeBuyButtonState extends State<_StripeBuyButton> {
   static const String _buyButtonId = 'buy_btn_1StauSErS4BEreV5TBeUB31X';
   static const String _publishableKey =
       'pk_live_51OmJtBErS4BEreV5UhzYaKOFcnSh7rBR8JhZVHxdoMOdASgGpvv5K7DR5iJObdGIJiMS6eHWhuI1DaiaaCQTi7nB006QQHO4DH';
+  static const double _initialButtonHeight = 360;
+  static const double _maxButtonHeight = 440;
+  static const double _heightPadding = 8;
+  static const double _minimumMeasuredHeight = 120;
 
   static int _viewTypeCounter = 0;
   static bool _stripeScriptInjected = false;
@@ -177,8 +222,9 @@ class _StripeBuyButtonState extends State<_StripeBuyButton> {
   html.DivElement? _container;
   html.Element? _stripeButton;
   Timer? _heightProbe;
-  double _buttonHeight = 520;
+  double _buttonHeight = _initialButtonHeight;
   int _stableHeightTicks = 0;
+  bool _hasReportedReady = false;
 
   @override
   void initState() {
@@ -206,7 +252,9 @@ class _StripeBuyButtonState extends State<_StripeBuyButton> {
 
         final stripeButton = html.document.createElement('stripe-buy-button')
           ..setAttribute('buy-button-id', _buyButtonId)
-          ..setAttribute('publishable-key', _publishableKey);
+          ..setAttribute('publishable-key', _publishableKey)
+          ..style.display = 'block'
+          ..style.width = '100%';
 
         _container = container;
         _stripeButton = stripeButton;
@@ -248,7 +296,14 @@ class _StripeBuyButtonState extends State<_StripeBuyButton> {
         return;
       }
 
-      final nextHeight = measuredHeight + 8;
+      if (!_hasReportedReady) {
+        _hasReportedReady = true;
+        widget.onReady?.call();
+      }
+
+      final nextHeight = (measuredHeight + _heightPadding)
+          .clamp(0, _maxButtonHeight)
+          .toDouble();
       if ((nextHeight - _buttonHeight).abs() > 1) {
         _stableHeightTicks = 0;
         setState(() {
@@ -271,18 +326,22 @@ class _StripeBuyButtonState extends State<_StripeBuyButton> {
       return null;
     }
 
-    var measuredHeight = stripeButton.getBoundingClientRect().height;
-    final containerScrollHeight = container.scrollHeight.toDouble();
-    if (containerScrollHeight > measuredHeight) {
-      measuredHeight = containerScrollHeight;
+    final iframe = stripeButton.shadowRoot?.querySelector('iframe') ??
+        stripeButton.querySelector('iframe');
+    var measuredHeight = iframe?.getBoundingClientRect().height ?? 0;
+    final stripeScrollHeight = stripeButton.scrollHeight.toDouble();
+    if (stripeScrollHeight > measuredHeight) {
+      measuredHeight = stripeScrollHeight;
     }
 
-    final containerRectHeight = container.getBoundingClientRect().height;
-    if (containerRectHeight > measuredHeight) {
-      measuredHeight = containerRectHeight;
+    final stripeRectHeight = stripeButton.getBoundingClientRect().height;
+    final isMeasuringAssignedHeight =
+        (stripeRectHeight - _buttonHeight).abs() <= 1;
+    if (!isMeasuringAssignedHeight && stripeRectHeight > measuredHeight) {
+      measuredHeight = stripeRectHeight;
     }
 
-    if (measuredHeight < 200) {
+    if (measuredHeight < _minimumMeasuredHeight) {
       return null;
     }
 
@@ -321,6 +380,7 @@ class QuickQrAnalyticsTracker {
 
   Future<void>? _configureFuture;
   String? _lastStep;
+  String? _lastScreenName;
 
   String get _layoutName => layout.name;
 
@@ -332,30 +392,41 @@ class QuickQrAnalyticsTracker {
     try {
       await analytics.setAnalyticsCollectionEnabled(true);
       await analytics.setDefaultEventParameters({
-        'app_name': 'quickqr',
-        'surface': 'qr_generator',
-        'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
-        'runtime': kReleaseMode ? 'release' : 'debug',
+        'platform_id': analyticsPlatformId,
+        'platform_name': analyticsPlatformName,
+        'tool_id': analyticsToolId,
+        'analytics_schema': analyticsSchemaVersion,
       });
+      await _setUserProperty(name: 'platform_id', value: analyticsPlatformId);
+      await _setUserProperty(name: 'tool_id', value: analyticsToolId);
       await _setUserProperty(name: 'layout_type', value: _layoutName);
       await _setUserProperty(name: 'lang_code', value: language);
       await _setUserProperty(
           name: 'editor_step', value: QuickQrStep.input.name);
       await _setUserProperty(name: 'qr_ready', value: 'no');
+      await _setUserProperty(name: 'qr_input_type', value: 'empty');
+      await _setUserProperty(name: 'support_seen', value: 'no');
 
-      await analytics.logScreenView(
-        screenName: 'quickqr_${_layoutName}_home',
-        screenClass: 'qr_generator',
-        parameters: _sanitizeParameters({
-          'layout': _layoutName,
-          'language': language,
-        }),
+      await _logStepScreenView(
+        step: QuickQrStep.input,
+        language: language,
+        snapshot: const {
+          'data_type': 'empty',
+          'data_length': 0,
+          'qr_ready': false,
+        },
       );
       await _logEvent(
-        'editor_session_start',
+        'free_qr_session_start',
         params: {
           'layout': _layoutName,
           'language': language,
+          'tool_name': analyticsToolName,
+          'site_domain': Uri.parse(seoUrl).host,
+          'device_platform': _devicePlatform(),
+          'runtime': kReleaseMode ? 'release' : 'debug',
+          'viewport_bucket': _viewportBucket(),
+          'viewport_orientation': _viewportOrientation(),
         },
       );
     } catch (error) {
@@ -372,7 +443,7 @@ class QuickQrAnalyticsTracker {
   }) async {
     await initialize(language: language);
     await _logEditorEvent(
-      'lifecycle_change',
+      'free_qr_lifecycle',
       snapshot: snapshot,
       extra: {
         'language': language,
@@ -394,18 +465,15 @@ class QuickQrAnalyticsTracker {
 
     _lastStep = stepName;
     await _setUserProperty(name: 'editor_step', value: stepName);
-    await _setUserProperty(
-      name: 'qr_ready',
-      value: snapshot['qr_ready'] == true ? 'yes' : 'no',
+    await _setSnapshotUserProperties(snapshot);
+
+    await _logStepScreenView(
+      step: step,
+      language: language,
+      snapshot: snapshot,
     );
-
-    final qrInputType = snapshot['data_type']?.toString();
-    if (qrInputType != null && qrInputType.isNotEmpty) {
-      await _setUserProperty(name: 'qr_input_type', value: qrInputType);
-    }
-
     await _logEditorEvent(
-      'editor_step_view',
+      'free_qr_step_view',
       snapshot: snapshot,
       extra: {
         'language': language,
@@ -416,15 +484,17 @@ class QuickQrAnalyticsTracker {
 
   Future<void> trackLanguageToggle({
     required String language,
+    required String previousLanguage,
     required Map<String, Object?> snapshot,
   }) async {
     await initialize(language: language);
     await _setUserProperty(name: 'lang_code', value: language);
     await _logEditorEvent(
-      'language_toggle',
+      'free_qr_language_change',
       snapshot: snapshot,
       extra: {
         'language': language,
+        'previous_language': previousLanguage,
       },
     );
   }
@@ -435,8 +505,9 @@ class QuickQrAnalyticsTracker {
     required int draftLength,
   }) async {
     await initialize(language: language);
+    await _setUserProperty(name: 'qr_input_type', value: inputType);
     await _logEvent(
-      'input_started',
+      'free_qr_input_start',
       params: {
         'layout': _layoutName,
         'language': language,
@@ -450,11 +521,30 @@ class QuickQrAnalyticsTracker {
     required String language,
   }) async {
     await initialize(language: language);
+    await _setUserProperty(name: 'qr_input_type', value: 'empty');
     await _logEvent(
-      'input_cleared',
+      'free_qr_input_clear',
       params: {
         'layout': _layoutName,
         'language': language,
+      },
+    );
+  }
+
+  Future<void> trackInputSubmitted({
+    required String language,
+    required String inputSource,
+    required String status,
+    required Map<String, Object?> snapshot,
+  }) async {
+    await initialize(language: language);
+    await _logEditorEvent(
+      'free_qr_input_submit',
+      snapshot: snapshot,
+      extra: {
+        'language': language,
+        'input_source': inputSource,
+        'status': status,
       },
     );
   }
@@ -465,16 +555,9 @@ class QuickQrAnalyticsTracker {
     required Map<String, Object?> snapshot,
   }) async {
     await initialize(language: language);
-    await _setUserProperty(
-      name: 'qr_ready',
-      value: snapshot['qr_ready'] == true ? 'yes' : 'no',
-    );
-    await _setUserProperty(
-      name: 'qr_input_type',
-      value: snapshot['data_type']?.toString(),
-    );
+    await _setSnapshotUserProperties(snapshot);
     await _logEditorEvent(
-      'qr_generate',
+      'free_qr_generate',
       snapshot: snapshot,
       extra: {
         'language': language,
@@ -490,8 +573,9 @@ class QuickQrAnalyticsTracker {
     required Map<String, Object?> snapshot,
   }) async {
     await initialize(language: language);
+    await _setSnapshotUserProperties(snapshot);
     await _logEditorEvent(
-      'qr_customize',
+      'free_qr_customize',
       snapshot: snapshot,
       extra: {
         'language': language,
@@ -511,9 +595,12 @@ class QuickQrAnalyticsTracker {
       await _setUserProperty(name: 'qr_ready', value: 'no');
       await _setUserProperty(
           name: 'editor_step', value: QuickQrStep.input.name);
+      await _setUserProperty(name: 'qr_input_type', value: 'empty');
+      await _setUserProperty(name: 'has_image', value: 'no');
+      await _setUserProperty(name: 'has_caption', value: 'no');
     }
     await _logEditorEvent(
-      'editor_reset',
+      'free_qr_reset',
       snapshot: snapshot,
       extra: {
         'language': language,
@@ -529,12 +616,15 @@ class QuickQrAnalyticsTracker {
     String? errorText,
   }) async {
     await initialize(language: language);
+    await _setSnapshotUserProperties(snapshot);
     await _logEditorEvent(
-      'qr_download',
+      'free_qr_download',
       snapshot: snapshot,
       extra: {
         'language': language,
         'status': status,
+        'file_type': 'png',
+        'file_name': 'screenshot.png',
         if (errorText != null && errorText.isNotEmpty) 'error_text': errorText,
       },
     );
@@ -546,8 +636,11 @@ class QuickQrAnalyticsTracker {
     required Map<String, Object?> snapshot,
   }) async {
     await initialize(language: language);
+    if (action == 'shown' || action == 'stripe_loaded') {
+      await _setUserProperty(name: 'support_seen', value: 'yes');
+    }
     await _logEditorEvent(
-      'support_prompt',
+      'free_qr_support',
       snapshot: snapshot,
       extra: {
         'language': language,
@@ -565,7 +658,7 @@ class QuickQrAnalyticsTracker {
   }) async {
     await initialize(language: language);
     await _logEditorEvent(
-      'outbound_click',
+      'free_qr_outbound',
       snapshot: snapshot,
       extra: {
         'language': language,
@@ -577,6 +670,57 @@ class QuickQrAnalyticsTracker {
     );
   }
 
+  Future<void> _setSnapshotUserProperties(Map<String, Object?> snapshot) async {
+    await _setUserProperty(
+      name: 'qr_ready',
+      value: snapshot['qr_ready'] == true ? 'yes' : 'no',
+    );
+    await _setUserProperty(
+      name: 'qr_input_type',
+      value: snapshot['data_type']?.toString(),
+    );
+    await _setUserProperty(
+      name: 'has_image',
+      value: snapshot['has_center_image'] == true ? 'yes' : 'no',
+    );
+    await _setUserProperty(
+      name: 'has_caption',
+      value: snapshot['has_caption'] == true ? 'yes' : 'no',
+    );
+  }
+
+  Future<void> _logStepScreenView({
+    required QuickQrStep step,
+    required String language,
+    required Map<String, Object?> snapshot,
+  }) async {
+    final screenName = '${analyticsPlatformId}_${_layoutName}_${step.name}';
+    if (_lastScreenName == screenName) {
+      return;
+    }
+
+    _lastScreenName = screenName;
+    try {
+      await analytics.logScreenView(
+        screenName: screenName,
+        screenClass: analyticsToolId,
+        parameters: _sanitizeParameters({
+          'layout': _layoutName,
+          'language': language,
+          'step': step.name,
+          'data_type': snapshot['data_type'],
+          'qr_ready': snapshot['qr_ready'],
+          'viewport_bucket': _viewportBucket(),
+          'viewport_orientation': _viewportOrientation(),
+        }),
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Analytics screen "$screenName" failed: $error');
+      }
+    }
+  }
+
   Future<void> _logEditorEvent(
     String name, {
     required Map<String, Object?> snapshot,
@@ -586,6 +730,8 @@ class QuickQrAnalyticsTracker {
       name,
       params: {
         'layout': _layoutName,
+        'viewport_bucket': _viewportBucket(),
+        'viewport_orientation': _viewportOrientation(),
         ...snapshot,
         ...extra,
       },
@@ -771,12 +917,14 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
   }
 
   void _toggleLanguage() {
+    final previousLanguage = _language;
     _setState(() {
       toggleLanguage = !toggleLanguage;
     });
     unawaited(
       _tracker.trackLanguageToggle(
         language: _language,
+        previousLanguage: previousLanguage,
         snapshot: _analyticsSnapshot(),
       ),
     );
@@ -868,6 +1016,19 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
 
     final snapshot = _analyticsSnapshot();
     unawaited(
+      _tracker.trackInputSubmitted(
+        language: _language,
+        inputSource: source,
+        status: data.isEmpty ? 'empty' : 'accepted',
+        snapshot: snapshot,
+      ),
+    );
+
+    if (data.isEmpty) {
+      return;
+    }
+
+    unawaited(
       _tracker.trackQrGenerated(
         language: _language,
         inputSource: source,
@@ -875,32 +1036,30 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
       ),
     );
 
-    if (data.isNotEmpty) {
-      unawaited(
-        _tracker.trackStepView(
-          step: QuickQrStep.customize,
-          language: _language,
-          snapshot: snapshot,
-        ),
-      );
-      unawaited(
-        _tracker.trackStepView(
-          step: QuickQrStep.download,
-          language: _language,
-          snapshot: snapshot,
-        ),
-      );
+    unawaited(
+      _tracker.trackStepView(
+        step: QuickQrStep.customize,
+        language: _language,
+        snapshot: snapshot,
+      ),
+    );
+    unawaited(
+      _tracker.trackStepView(
+        step: QuickQrStep.download,
+        language: _language,
+        snapshot: snapshot,
+      ),
+    );
 
-      if (!_hasLoggedSupportPromptShown) {
-        _hasLoggedSupportPromptShown = true;
-        unawaited(
-          _tracker.trackSupportAction(
-            language: _language,
-            action: 'shown',
-            snapshot: snapshot,
-          ),
-        );
-      }
+    if (!_hasLoggedSupportPromptShown) {
+      _hasLoggedSupportPromptShown = true;
+      unawaited(
+        _tracker.trackSupportAction(
+          language: _language,
+          action: 'shown',
+          snapshot: snapshot,
+        ),
+      );
     }
   }
 
@@ -914,13 +1073,42 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
     );
   }
 
+  void _handleSupportReady() {
+    unawaited(
+      _tracker.trackSupportAction(
+        language: _language,
+        action: 'stripe_loaded',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+  }
+
   Future<void> _pickQrColor() async {
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'qr_color',
+        action: 'picker_opened',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+
     final selectedColor = await _showColorPickerDialog(
       context: context,
       useSpanish: toggleLanguage,
       initialColor: currentColor,
     );
-    if (selectedColor == null) return;
+    if (selectedColor == null) {
+      unawaited(
+        _tracker.trackCustomization(
+          language: _language,
+          control: 'qr_color',
+          action: 'picker_cancelled',
+          snapshot: _analyticsSnapshot(),
+        ),
+      );
+      return;
+    }
 
     _updatePreview(() {
       currentColor = selectedColor;
@@ -937,13 +1125,32 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
   }
 
   Future<void> _pickBackgroundColor() async {
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'background',
+        action: 'picker_opened',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+
     final selectedColor = await _showColorPickerDialog(
       context: context,
       useSpanish: toggleLanguage,
       initialColor:
           codeBackground == Colors.transparent ? Colors.white : codeBackground,
     );
-    if (selectedColor == null) return;
+    if (selectedColor == null) {
+      unawaited(
+        _tracker.trackCustomization(
+          language: _language,
+          control: 'background',
+          action: 'picker_cancelled',
+          snapshot: _analyticsSnapshot(),
+        ),
+      );
+      return;
+    }
 
     _updatePreview(() {
       codeBackground = selectedColor;
@@ -1091,6 +1298,15 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
   }
 
   Future<void> _pickCenterImage() async {
+    unawaited(
+      _tracker.trackCustomization(
+        language: _language,
+        control: 'center_image',
+        action: 'picker_opened',
+        snapshot: _analyticsSnapshot(),
+      ),
+    );
+
     final image = await ImagePickerWeb.getImageAsBytes();
     if (image == null) {
       unawaited(
@@ -2057,6 +2273,7 @@ class _LargeScreenState extends QuickQrEditorState<LargeScreen> {
                             useSpanish: toggleLanguage,
                             compact: false,
                             onSupportPressed: _handleSupportPressed,
+                            onSupportReady: _handleSupportReady,
                           ),
                         ),
 
@@ -3038,6 +3255,7 @@ class _SmallScreenState extends QuickQrEditorState<SmallScreen> {
                           useSpanish: toggleLanguage,
                           compact: true,
                           onSupportPressed: _handleSupportPressed,
+                          onSupportReady: _handleSupportReady,
                         ),
 
                         ///Tagline:
