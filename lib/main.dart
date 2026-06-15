@@ -33,7 +33,7 @@ void main() async {
         measurementId: "G-WG6K1686BX"),
   );
 
-  runApp(const MyApp());
+  runApp(MyApp(initialQrData: _initialQrDataFromCurrentUrl()));
 }
 
 const Color backgroundBlue = Color(0xFF90B7D1); //purple
@@ -48,6 +48,7 @@ const String analyticsPlatformName = 'Free QR';
 const String analyticsToolId = 'free_qr_generator';
 const String analyticsToolName = 'Free QR Generator';
 const String analyticsSchemaVersion = 'free_qr_v1';
+const List<String> _initialQrQueryParameters = ['value', 'data', 'text', 'qr'];
 
 enum QuickQrLayout { large, small }
 
@@ -87,6 +88,86 @@ String _viewportOrientation() {
   final height = html.window.innerHeight ?? 0;
 
   return width >= height ? 'landscape' : 'portrait';
+}
+
+String? _initialQrDataFromCurrentUrl() {
+  if (!kIsWeb) {
+    return null;
+  }
+
+  return _initialQrDataFromUri(Uri.parse(html.window.location.href));
+}
+
+String? _initialQrDataFromUri(Uri uri) {
+  return _extractInitialQrData(uri) ?? _extractInitialQrDataFromFragment(uri);
+}
+
+String? _extractInitialQrData(Uri uri) {
+  for (final parameterName in _initialQrQueryParameters) {
+    final value = uri.queryParameters[parameterName];
+    if (_hasInitialQrData(value)) {
+      return value;
+    }
+  }
+
+  final bareQueryValue = _bareValueQueryData(uri);
+  if (_hasInitialQrData(bareQueryValue)) {
+    return bareQueryValue;
+  }
+
+  final valuePathData = _valuePathData(uri);
+  if (_hasInitialQrData(valuePathData)) {
+    return valuePathData;
+  }
+
+  return null;
+}
+
+String? _extractInitialQrDataFromFragment(Uri uri) {
+  final fragment = uri.fragment;
+  if (fragment.isEmpty) {
+    return null;
+  }
+
+  final normalizedFragment = fragment.startsWith('/') ? fragment : '/$fragment';
+  return _extractInitialQrData(
+      Uri.parse('https://free-qrcode.com$normalizedFragment'));
+}
+
+String? _bareValueQueryData(Uri uri) {
+  if (uri.query.isEmpty) {
+    return null;
+  }
+
+  final lastPathSegment =
+      uri.pathSegments.isEmpty ? '' : uri.pathSegments.last.toLowerCase();
+  if (lastPathSegment != 'value' && lastPathSegment != 'value=') {
+    return null;
+  }
+
+  return Uri.decodeQueryComponent(uri.query);
+}
+
+String? _valuePathData(Uri uri) {
+  final pathSegments = uri.pathSegments;
+
+  for (final segment in pathSegments.reversed) {
+    if (segment.toLowerCase().startsWith('value=')) {
+      return segment.substring('value='.length);
+    }
+  }
+
+  for (var index = 0; index < pathSegments.length - 1; index++) {
+    if (pathSegments[index].toLowerCase() == 'value') {
+      return pathSegments[index + 1];
+    }
+  }
+
+  return null;
+}
+
+bool _hasInitialQrData(String? value) {
+  return value != null && value.trim().isNotEmpty;
 }
 
 String _classifyQrData(String value) {
@@ -830,6 +911,7 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
   static const double _defaultCodeTextSize = 20;
 
   QuickQrLayout get layout;
+  String? get initialQrData;
 
   late final QuickQrAnalyticsTracker _tracker = QuickQrAnalyticsTracker(
     analytics: analytics,
@@ -884,6 +966,25 @@ abstract class QuickQrEditorState<T extends StatefulWidget> extends State<T>
         snapshot: _analyticsSnapshot(),
       ),
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _applyInitialQrData();
+    });
+  }
+
+  void _applyInitialQrData() {
+    if (!mounted || data.isNotEmpty) {
+      return;
+    }
+
+    final initialData = initialQrData;
+    if (!_hasInitialQrData(initialData)) {
+      return;
+    }
+
+    textController.text = initialData!;
+    _hasLoggedInputStart = true;
+    handleSubmit(initialData, source: 'url');
   }
 
   @override
@@ -1442,46 +1543,28 @@ Future<Color?> _showColorPickerDialog({
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({Key? key, this.initialQrData}) : super(key: key);
+
+  final String? initialQrData;
 
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    // Define MetaSEO object
-    MetaSEO meta = MetaSEO();
-    html.document.title = seoTitle;
-
-    // add meta seo data for web app as you want
-    meta.author(author: 'Softwarelab X');
-    meta.description(description: seoDescription);
-    meta.keywords(
-        keywords:
-            'Software, Custom, free, QR, code, QRcode , código , generator ,generator , free, gratis ,quick, rápido, software , rapido, codigo');
-
-    // add meta seo open graph tags as you want
-    meta.ogTitle(ogTitle: seoTitle);
-    meta.ogDescription(ogDescription: seoDescription);
-    meta.ogImage(
-        ogImage:
-            'https://firebasestorage.googleapis.com/v0/b/softwarelab-by-encorange.appspot.com/o/Thimbnail_QuickQR.png?alt=media&token=5bcaa5ae-ed77-4f8c-82df-d72cd2a8d071');
-    meta.propertyContent(property: 'og:url', content: seoUrl);
-    meta.propertyContent(property: 'og:site_name', content: seoTitle);
-    meta.nameContent(name: 'twitter:title', content: seoTitle);
-    meta.nameContent(name: 'twitter:description', content: seoDescription);
-    meta.nameContent(name: 'twitter:url', content: seoUrl);
-
     // here you can add any tags does not exist in the package as this
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(fontFamily: 'Futura'),
       title: seoTitle,
-      home: const MyHomePage(),
+      home: MyHomePage(initialQrData: initialQrData),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({Key? key}) : super(key: key);
+  const MyHomePage({Key? key, this.initialQrData}) : super(key: key);
+
+  final String? initialQrData;
+
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
@@ -1489,16 +1572,18 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
-    return const ResponsiveWidget(
-      largeScreen: LargeScreen(),
-      smallScreen: SmallScreen(),
+    return ResponsiveWidget(
+      largeScreen: LargeScreen(initialQrData: widget.initialQrData),
+      smallScreen: SmallScreen(initialQrData: widget.initialQrData),
     );
   }
 }
 
 ///LARGE SCREEN
 class LargeScreen extends StatefulWidget {
-  const LargeScreen({super.key});
+  const LargeScreen({super.key, this.initialQrData});
+
+  final String? initialQrData;
 
   @override
   State<LargeScreen> createState() => _LargeScreenState();
@@ -1507,6 +1592,9 @@ class LargeScreen extends StatefulWidget {
 class _LargeScreenState extends QuickQrEditorState<LargeScreen> {
   @override
   QuickQrLayout get layout => QuickQrLayout.large;
+
+  @override
+  String? get initialQrData => widget.initialQrData;
 
   @override
   Widget build(BuildContext context) {
@@ -1785,8 +1873,7 @@ class _LargeScreenState extends QuickQrEditorState<LargeScreen> {
                             //button logo
                             IconButton(
                               onPressed: () {
-                                final Uri link =
-                                    Uri.parse('https://encorangelab.com/');
+                                final Uri link = Uri.parse(Website);
                                 unawaited(
                                   _openTrackedUri(
                                     uri: link,
@@ -2300,8 +2387,7 @@ class _LargeScreenState extends QuickQrEditorState<LargeScreen> {
                               //tagline
                               IconButton(
                                 onPressed: () {
-                                  final Uri link =
-                                      Uri.parse('https://encorangelab.com/');
+                                  final Uri link = Uri.parse(Website);
                                   unawaited(
                                     _openTrackedUri(
                                       uri: link,
@@ -2520,7 +2606,9 @@ class _LargeScreenState extends QuickQrEditorState<LargeScreen> {
 
 ///SMALL SCREEN
 class SmallScreen extends StatefulWidget {
-  const SmallScreen({super.key});
+  const SmallScreen({super.key, this.initialQrData});
+
+  final String? initialQrData;
 
   @override
   State<SmallScreen> createState() => _SmallScreenState();
@@ -2529,6 +2617,9 @@ class SmallScreen extends StatefulWidget {
 class _SmallScreenState extends QuickQrEditorState<SmallScreen> {
   @override
   QuickQrLayout get layout => QuickQrLayout.small;
+
+  @override
+  String? get initialQrData => widget.initialQrData;
 
   @override
   Widget build(BuildContext context) {
@@ -2808,8 +2899,7 @@ class _SmallScreenState extends QuickQrEditorState<SmallScreen> {
                             //button logo
                             IconButton(
                               onPressed: () {
-                                final Uri link =
-                                    Uri.parse('https://encorangelab.com/');
+                                final Uri link = Uri.parse(Website);
                                 unawaited(
                                   _openTrackedUri(
                                     uri: link,
@@ -3274,8 +3364,7 @@ class _SmallScreenState extends QuickQrEditorState<SmallScreen> {
                               //tagline
                               IconButton(
                                 onPressed: () {
-                                  final Uri link =
-                                      Uri.parse('https://encorangelab.com/');
+                                  final Uri link = Uri.parse(Website);
                                   unawaited(
                                     _openTrackedUri(
                                       uri: link,
@@ -3441,8 +3530,7 @@ class _SmallScreenState extends QuickQrEditorState<SmallScreen> {
                             width: 100,
                           ),
                           onPressed: () {
-                            final Uri link =
-                                Uri.parse('https://encorangelab.com/');
+                            final Uri link = Uri.parse(Website);
                             unawaited(
                               _openTrackedUri(
                                 uri: link,
